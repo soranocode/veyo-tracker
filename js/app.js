@@ -6,126 +6,135 @@
 
     const DEFAULT_PERIOD = 30;
 
+    const PERIOD_STEPS = [1, 2, 3, 4, 5, 6, 7, 14, 21, 28, 30, 60, 90, 120, 150, 180, 210, 240, 270, 300, 330, 360];
+
+    function nearestStep(value) {
+        return PERIOD_STEPS.reduce((best, s) =>
+            Math.abs(s - value) < Math.abs(best - value) ? s : best, PERIOD_STEPS[0]);
+    }
+
+    function pluralDays(n, one, few, many) {
+        const abs = Math.abs(n) % 100;
+        const d = abs % 10;
+        if (abs > 10 && abs < 20) return n + ' ' + many;
+        if (d > 1 && d < 5) return n + ' ' + few;
+        if (d === 1) return n + ' ' + one;
+        return n + ' ' + many;
+    }
+
+    function formatPeriod(days) {
+        days = parseInt(days, 10) || 0;
+        if (days <= 6) return pluralDays(days, 'день', 'дня', 'дней');
+        if (days < 30) return pluralDays(days, 'день', 'дня', 'дней');
+        const months = Math.floor(days / 30);
+        const rest = days % 30;
+        let parts = [];
+        if (months > 0) parts.push(pluralDays(months, 'месяц', 'месяца', 'месяцев'));
+        if (rest > 0) {
+            const weeks = Math.floor(rest / 7);
+            const d = rest % 7;
+            if (weeks > 0) parts.push(pluralDays(weeks, 'неделя', 'недели', 'недель'));
+            if (d > 0) parts.push(pluralDays(d, 'день', 'дня', 'дней'));
+        }
+        return parts.join(' ');
+    }
+
     const EMOJI_DEFAULTS = {
+        // Вода и напитки
         '💧': 'Выпить воды',
-        '🏃': 'Пробежка',
-        '📚': 'Прочитать',
-        '🏋️': 'Спорт',
-        '💤': 'Сон',
-        '🍎': 'Поесть',
-        '💊': 'Принять таблетку',
-        '🧹': 'Уборка',
-        '🚶': 'Прогулка',
-        '🎯': 'Работа над целью',
-        '🚬': 'Бросить курить',
-        '📺': 'Посмотреть сериал',
         '☕': 'Выпить кофе',
         '🍵': 'Выпить чай',
-        '🥗': 'Позаниматься спортом',
+        '🥤': 'Меньше газировки',
+        // Еда
+        '🍎': 'Поесть',
+        '🥗': 'Салат / правильное питание',
         '🥦': 'Здоровое питание',
-        '🧘': 'Медитация',
-        '📝': 'Планирование',
-        '💻': 'Работа за компьютером',
-        '📱': 'Меньше телефона',
-        '🧼': 'Мыть руки',
-        '🦷': 'Чистить зубы',
-        '💊': 'Принять лекарство',
-        '🩺': 'Записаться к врачу',
-        '🧩': 'Головоломка',
-        '🎮': 'Игры',
-        '🎨': 'Творчество',
-        '🎸': 'Музыка',
-        '🎹': 'Игра на пианино',
-        '📸': 'Фотография',
-        '🌱': 'Расти растения',
-        '🐕': 'Выгул собаки',
-        '🐈': 'Уход за котом',
-        '🛁': 'Принять ванну',
-        '🧴': 'Уход за кожей',
-        '💰': 'Отложить деньги',
-        '🛒': 'Сходить в магазин',
-        '🧺': 'Постирать',
-        '🧹': 'Уборка дома',
         '🍳': 'Приготовить еду',
-        '☕': 'Перерыв на кофе',
-        '🧠': 'Учить новое',
-        '🇬🇧': 'Английский язык',
-        '🇪🇸': 'Испанский язык',
-        '🇩🇪': 'Немецкий язык',
-        '🇨🇳': 'Китайский язык',
-        '🗣️': 'Практика речи',
-        '✍️': 'Написание текстов',
-        '📖': 'Чтение книги',
-        '🎧': 'Подкаст/аудиокнига',
+        '🍫': 'Меньше сладкого',
+        '🍟': 'Меньше фастфуда',
+        // Здоровье и уход
+        '💊': 'Принять таблетку',
+        '🦷': 'Чистить зубы',
+        '🧼': 'Мыть руки',
+        '🩺': 'Записаться к врачу',
+        '🧴': 'Уход за кожей',
+        '🛁': 'Принять ванну',
+        '🚿': 'Душ',
+        '💤': 'Сон',
         '🛌': 'Ранний сон',
         '🌅': 'Ранний подъём',
+        // Спорт и движение
+        '🏋️': 'Спорт',
         '💪': 'Силовые тренировки',
+        '🏃': 'Пробежка',
+        '🚶': 'Прогулка',
         '🏊': 'Плавание',
         '🚴': 'Велосипед',
         '⚽': 'Футбол',
         '🏀': 'Баскетбол',
         '🎾': 'Теннис',
         '🧗': 'Скалолазание',
-        '🏃‍♀️': 'Бег',
+        '🧘': 'Медитация',
         '🧘‍♀️': 'Йога',
-        '🙏': 'Благодарность/молитва',
-        '😊': 'Улыбаться',
-        '🙌': 'Праздновать успех',
-        '📅': 'Запланировать день',
-        '⏰': 'Таймер/Помодоро',
-        '🧩': 'Пазл/головоломка',
-        '🎲': 'Настольные игры',
-        '🧸': 'Уход за питомцем',
-        '🌿': 'Время на природе',
-        '🌲': 'Лесная прогулка',
-        '🏞️': 'Поход в горы',
-        '🏖️': 'Пляж/море',
-        '🚿': 'Душ',
-        '🛌': 'Отдых',
-        '🤝': 'Встреча с другом',
-        '👨‍👩‍👧‍👦': 'Семейное время',
-        '💌': 'Написать письмо',
-        '📞': 'Позвонить близким',
-        '🎁': 'Сделать подарок',
-        '🥳': 'Праздник',
-        '🎂': 'День рождения',
-        '🧹': 'Генеральная уборка',
+        '🤸': 'Растяжка',
+        // Учёба и развитие
+        '📚': 'Прочитать',
+        '📖': 'Чтение книги',
+        '📝': 'Планирование',
+        '✍️': 'Написать тексты',
+        '🗣️': 'Практика речи',
+        '🧠': 'Учить новое',
+        '🎓': 'Учёба / курсы',
+        '💻': 'Работа за компьютером',
+        '📱': 'Меньше телефона',
+        '🎧': 'Подкаст / аудиокнига',
+        '⏰': 'Таймер / Помодоро',
+        '🇬🇧': 'Английский язык',
+        '🇪🇸': 'Испанский язык',
+        // Дом и быт
+        '🧹': 'Уборка',
+        '🧺': 'Постирать',
         '🗑️': 'Вынести мусор',
-        '🚰': 'Прополоскать рот',
-        '💊': 'Витамины',
-        '🧴': 'Солнцезащита',
-        '🕶️': 'Очки от солнца',
-        '🧢': 'Кепка/шапка',
-        '🧣': 'Шарф',
-        '🧤': 'Перчатки',
-        '🧦': 'Носки',
-        '👟': 'Кроссовки',
-        '👕': 'Футболка',
-        '👖': 'Джинсы',
-        '🧥': 'Куртка',
-        '👗': 'Платье',
-        '👔': 'Рубашка',
-        '👗': 'Юбка',
-        '👚': 'Блузка',
-        '🧥': 'Пальто',
-        '🧣': 'Платок',
-        '🧤': 'Варежки',
-        '🧦': 'Носки',
-        '👟': 'Кеды',
-        '👞': 'Туфли',
-        '👠': 'Туфли на каблуке',
-        '👢': 'Сапоги',
-        '🥿': 'Балетки',
-        '👡': 'Сандалии',
-        '🩴': 'Шлепанцы',
-        '🧦': 'Носки',
-        '🧦': 'Носки'
+        '🧽': 'Помыть посуду',
+        '🛒': 'Сходить в магазин',
+        '🧾': 'Планировать покупки',
+        '🌱': 'Полить растения',
+        // Деньги
+        '💰': 'Отложить деньги',
+        '📊': 'Учёт финансов',
+        // Отношения, отдых, хобби
+        '🤝': 'Встретиться с другом',
+        '📞': 'Позвонить близким',
+        '👨‍👩‍👧‍👦': 'Время с семьёй',
+        '💌': 'Написать близким',
+        '🎁': 'Сделать подарок',
+        '🎯': 'Работа над целью',
+        '📅': 'Запланировать день',
+        '🎮': 'Время игр',
+        '🎲': 'Настольные игры',
+        '🎨': 'Творчество',
+        '🎸': 'Игра на гитаре',
+        '🎹': 'Игра на пианино',
+        '📸': 'Фотография',
+        '🧩': 'Головоломка',
+        '🧸': 'Уход за питомцем',
+        '🐕': 'Выгул собаки',
+        '🐈': 'Уход за котом',
+        '🌿': 'Время на природе',
+        '🌲': 'Прогулка в лесу',
+        '🏞️': 'Поход в горы',
+        '🏖️': 'Отдых на море',
+        '🥳': 'Отметить праздник',
+        '🙏': 'Благодарность',
+        '🚬': 'Бросить курить',
+        '📺': 'Норма телевизора'
     };
 
     let habits = [];
     let editingId = null;
     let toastTimer = null;
     let confirmResolver = null;
+    let userEditedName = false;
 
     const $ = (sel) => document.querySelector(sel);
     const $$ = (sel) => document.querySelectorAll(sel);
@@ -196,6 +205,10 @@
 
     function save() {
         localStorage.setItem(STORAGE_KEY, JSON.stringify(habits));
+    }
+
+    function pld(n) {
+        return pluralDays(n, 'день', 'дня', 'дней');
     }
 
     function formatDate(d) {
@@ -351,15 +364,44 @@
     }
 
     function normalizeEmoji(value) {
-        return value
-            .replace(/[^\p{Extended_Pictographic}\u{200D}\u{FE0F}\u{1F3FB}-\u{1F3FF}\u{20E3}0-9#*]/gu, '')
-            .slice(0, 8);
+        // Оставляем первые символы (до 8) как есть, без агрессивной фильтрации
+        // На мобиле emoji picker даёт правильный эмодзи, на desktop пользователь копирует
+        return value.substring(0, 8);
     }
+
+    function emojiKey(emoji) {
+        return emoji.replace(/\uFE0F/g, '');
+    }
+
+    const EMOJI_LOOKUP = {};
+    Object.entries(EMOJI_DEFAULTS).forEach(([k, v]) => {
+        EMOJI_LOOKUP[emojiKey(k)] = v;
+    });
 
     function getSelectedEmoji() {
         const custom = normalizeEmoji($('#customEmoji').value.trim());
         if (custom) return custom;
         return $('.emoji-btn.selected')?.dataset.emoji || '💧';
+    }
+
+    function applyEmojiName(emoji) {
+        if (editingId) return; // В режиме редактирования ничего не трогаем
+        if (userEditedName) return; // Если пользователь сам ввел название, не трогаем
+        const defaultName = EMOJI_LOOKUP[emojiKey(emoji)];
+        if (!defaultName) return;
+        $('#habitName').value = defaultName;
+        $('#nameError').hidden = true;
+    }
+
+    function syncPresetSelection(emoji) {
+        const key = emojiKey(emoji);
+        let matched = false;
+        $$('.emoji-btn').forEach(btn => {
+            const isMatch = emojiKey(btn.dataset.emoji) === key;
+            btn.classList.toggle('selected', isMatch);
+            if (isMatch) matched = true;
+        });
+        return matched;
     }
 
     function renderHabits() {
@@ -385,9 +427,9 @@
 
             let status;
             if (finished) {
-                status = `Период завершён — выполнено ${countDaysDone(habit)} из ${habit.periodDays} дней`;
+                status = `Период завершён — выполнено ${countDaysDone(habit)} из ${habit.periodDays} ${pld(habit.periodDays)}`;
             } else {
-                status = `${count} / ${habit.goal} сегодня • осталось ${remaining} дн.`;
+                status = `${count} / ${habit.goal} сегодня • осталось ${remaining} ${pld(remaining)}`;
                 if (done) status += ' — выполнено!';
             }
 
@@ -472,9 +514,9 @@
 
     function isAnyOverlayOpen() {
         return $('#modalOverlay').classList.contains('active') ||
-            $('#confirmOverlay').classList.contains('active');
+            $('#confirmOverlay').classList.contains('active') ||
+            $('#periodInputOverlay').classList.contains('active');
     }
-
     function updateBackButton() {
         if (!tg || !tg.BackButton) return;
         try {
@@ -519,7 +561,7 @@
         save();
         renderHabits();
         renderPlan();
-        showToast('Привычка удалена');
+        showToast('Задача удалена');
     }
 
     function addHabit(name, emoji, goal, color, periodDays) {
@@ -537,7 +579,7 @@
         save();
         renderHabits();
         renderPlan();
-        showToast(`Привычка добавлена — период ${periodDays} дн.`);
+        showToast(`Задача добавлена — период ${periodDays} ${pld(periodDays)}`);
     }
 
     function updateHabit(id, name, emoji, goal, color, periodDays) {
@@ -554,6 +596,57 @@
         showToast('Изменения сохранены');
     }
 
+    // Логика периода (вынесена в scope IIFE, чтобы openModal могла её вызывать)
+    function setPeriod(value) {
+        value = Math.min(Math.max(parseInt(value, 10) || DEFAULT_PERIOD, 1), 365);
+        const slider = $('#periodSlider');
+        const presets = $$('.preset-btn');
+        if (slider) slider.value = value;
+        $('#habitPeriod').value = value;
+        $('#periodDisplay .period-value').textContent = formatPeriod(value);
+        $('#periodDisplay .period-label').textContent = 'изменить';
+        if (presets.length) {
+            presets.forEach(btn => {
+                btn.removeAttribute('data-selected');
+                if (parseInt(btn.dataset.days, 10) === value) {
+                    btn.setAttribute('data-selected', 'true');
+                }
+            });
+        }
+    }
+
+    function openPeriodInput() {
+        const field = $('#periodCustomDays');
+        const overlay = $('#periodInputOverlay');
+        if (!field || !overlay) return;
+        field.value = $('#habitPeriod').value;
+        field.min = 1;
+        field.max = 365;
+        updatePeriodCustomResult();
+        overlay.classList.add('active');
+        document.body.classList.add('modal-open');
+        updateBackButton();
+        setTimeout(() => field.focus(), 100);
+    }
+
+    function closePeriodInput() {
+        $('#periodInputOverlay').classList.remove('active');
+        document.body.classList.remove('modal-open');
+        updateBackButton();
+    }
+
+    function updatePeriodCustomResult() {
+        const field = $('#periodCustomDays');
+        const result = $('#periodCustomResult');
+        if (!field || !result) return;
+        const v = parseInt(field.value, 10);
+        if (!v || v < 1 || v > 365) {
+            result.textContent = v ? 'Максимум 365 дней' : '';
+            return;
+        }
+        result.textContent = 'Это: ' + formatPeriod(v);
+    }
+
     function openModal(habitId) {
         editingId = habitId || null;
         const modal = $('#modalOverlay');
@@ -563,6 +656,7 @@
         if (editingId) {
             const habit = habits.find(h => h.id === editingId);
             if (!habit) return;
+            userEditedName = true; // При редактировании не меняем название автоматически
             title.textContent = 'Редактировать задачу';
             submitBtn.textContent = 'Сохранить';
             $('#habitName').value = habit.name;
@@ -578,10 +672,10 @@
             $$('.color-btn').forEach(btn => {
                 btn.classList.toggle('selected', btn.dataset.color === habit.color);
             });
-            $$('.period-btn').forEach(btn => {
-                btn.classList.toggle('selected', parseInt(btn.dataset.days, 10) === habit.periodDays);
-            });
+            $('#periodSlider').value = habit.periodDays;
+            setPeriod(habit.periodDays);
         } else {
+            userEditedName = false; // При создании можем менять название при смене иконки
             title.textContent = 'Новая задача';
             submitBtn.textContent = 'Добавить';
             $('#habitForm').reset();
@@ -592,9 +686,8 @@
             $$('.color-btn').forEach((btn, i) => {
                 btn.classList.toggle('selected', i === 0);
             });
-            $$('.period-btn').forEach(btn => {
-                btn.classList.toggle('selected', parseInt(btn.dataset.days, 10) === DEFAULT_PERIOD);
-            });
+            setPeriod(30);
+            applyEmojiName('💧');
         }
 
         $('#nameError').hidden = true;
@@ -633,7 +726,7 @@
             label.className = 'plan-label';
             label.innerHTML = `
                 <span class="plan-name" title="${escapeHtml(habit.name)}">${habit.emoji} ${escapeHtml(habit.name)}</span>
-                <span class="plan-dates">до ${formatShort(end)} • ${countDaysDone(habit)}/${habit.periodDays} дн.</span>
+                <span class="plan-dates">до ${formatShort(end)} • ${countDaysDone(habit)}/${habit.periodDays} ${pld(habit.periodDays)}</span>
             `;
 
             const cells = document.createElement('div');
@@ -720,23 +813,17 @@
                 $$('.emoji-btn').forEach(b => b.classList.remove('selected'));
                 btn.classList.add('selected');
                 $('#customEmoji').value = '';
-
-                if (!editingId && EMOJI_DEFAULTS[btn.dataset.emoji]) {
-                    $('#habitName').value = EMOJI_DEFAULTS[btn.dataset.emoji];
-                    $('#nameError').hidden = true;
-                }
+                applyEmojiName(btn.dataset.emoji);
             });
         });
 
         $('#customEmoji').addEventListener('input', () => {
             const input = $('#customEmoji');
             input.value = normalizeEmoji(input.value);
-            if (input.value.trim()) {
-                $$('.emoji-btn').forEach(b => b.classList.remove('selected'));
-                if (!editingId && EMOJI_DEFAULTS[input.value.trim()]) {
-                    $('#habitName').value = EMOJI_DEFAULTS[input.value.trim()];
-                    $('#nameError').hidden = true;
-                }
+            const emoji = input.value.trim();
+            if (emoji) {
+                syncPresetSelection(emoji);
+                applyEmojiName(emoji);
             }
         });
 
@@ -747,14 +834,50 @@
             });
         });
 
-        $$('.period-btn').forEach(btn => {
-            btn.addEventListener('click', () => {
-                $$('.period-btn').forEach(b => b.classList.remove('selected'));
-                btn.classList.add('selected');
+        // Обработчики периода (логика вынесена в scope IIFE — setPeriod и т.д.)
+        const periodSlider = $('#periodSlider');
+        const periodPresets = $$('.preset-btn');
+        const periodOverlay = $('#periodInputOverlay');
+        const periodCustomField = $('#periodCustomDays');
+        const periodCustomResult = $('#periodCustomResult');
+
+        periodSlider.addEventListener('input', (e) => {
+            setPeriod(nearestStep(e.target.value));
+        });
+
+        periodPresets.forEach(btn => {
+            btn.addEventListener('click', (e) => {
+                e.preventDefault();
+                setPeriod(btn.dataset.days);
             });
         });
 
+        $('#periodDisplay').addEventListener('click', openPeriodInput);
+        $('#periodDisplay').addEventListener('keydown', (e) => {
+            if (e.key === 'Enter' || e.key === ' ') {
+                e.preventDefault();
+                openPeriodInput();
+            }
+        });
+
+        periodCustomField.addEventListener('input', updatePeriodCustomResult);
+
+        $('#periodCustomOk').addEventListener('click', () => {
+            const v = parseInt(periodCustomField.value, 10);
+            if (!v || v < 1 || v > 365) return;
+            setPeriod(v);
+            closePeriodInput();
+        });
+
+        $('#periodCustomCancel').addEventListener('click', closePeriodInput);
+        periodOverlay.addEventListener('click', (e) => {
+            if (e.target === e.currentTarget) closePeriodInput();
+        });
+
         $('#habitName').addEventListener('input', () => {
+            if ($('#habitName').value.trim()) {
+                userEditedName = true; // Пользователь вводит название вручную
+            }
             $('#nameError').hidden = true;
         });
 
@@ -772,7 +895,7 @@
             const color = $('.color-btn.selected')?.dataset.color || '#6c5ce7';
             const goal = Math.min(Math.max(parseInt($('#habitGoal').value, 10) || 1, 1), 100);
             const periodDays = Math.min(Math.max(
-                parseInt($('.period-btn.selected')?.dataset.days, 10) || DEFAULT_PERIOD, 1, 365
+                parseInt($('#habitPeriod').value, 10) || DEFAULT_PERIOD, 1, 365
             ), 365);
 
             if (!name) {
@@ -796,6 +919,10 @@
             if (e.key !== 'Escape') return;
             if ($('#confirmOverlay').classList.contains('active')) {
                 resolveConfirm(false);
+                return;
+            }
+            if ($('#periodInputOverlay').classList.contains('active')) {
+                closePeriodInput();
                 return;
             }
             if ($('#modalOverlay').classList.contains('active')) {

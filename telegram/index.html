@@ -4,8 +4,8 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
     <title>Habit Tracker — Трекер привычек</title>
-    <script src="https://telegram.org/js/telegram-web-app.js"></script>
     <link rel="stylesheet" href="css/style.css">
+    <script src="https://telegram.org/js/telegram-web-app.js"></script>
 </head>
 <body>
     <div class="app">
@@ -70,43 +70,53 @@
                 </div>
                 <form id="habitForm">
                     <div class="form-group">
+                        <label>Иконка</label>
+                        <div class="emoji-group">
+                            <div class="emoji-picker" id="emojiPicker">
+                                <button type="button" class="emoji-btn selected" data-emoji="💧">💧</button>
+                                <button type="button" class="emoji-btn" data-emoji="🏃">🏃</button>
+                                <button type="button" class="emoji-btn" data-emoji="📚">📚</button>
+                                <button type="button" class="emoji-btn" data-emoji="🏋️">🏋️</button>
+                                <button type="button" class="emoji-btn" data-emoji="💤">💤</button>
+                                <button type="button" class="emoji-btn" data-emoji="🍎">🍎</button>
+                                <button type="button" class="emoji-btn" data-emoji="💊">💊</button>
+                                <button type="button" class="emoji-btn" data-emoji="🧹">🧹</button>
+                                <button type="button" class="emoji-btn" data-emoji="🚶">🚶</button>
+                                <button type="button" class="emoji-btn" data-emoji="🎯">🎯</button>
+                                <button type="button" class="emoji-btn" data-emoji="🚬">🚬</button>
+                                <button type="button" class="emoji-btn" data-emoji="📺">📺</button>
+                            </div>
+                            <input type="text" class="emoji-input" id="customEmoji" placeholder="Введи свой смайлик" maxlength="8" autocomplete="off">
+                        </div>
+                    </div>
+                    <div class="form-group">
                         <label for="habitName">Название</label>
                         <input type="text" id="habitName" placeholder="Например: Пить воду" maxlength="60" required>
                         <p class="form-error" id="nameError" hidden>Введите название задачи</p>
-                    </div>
-                    <div class="form-group">
-                        <label>Иконка</label>
-                        <div class="emoji-picker" id="emojiPicker">
-                            <button type="button" class="emoji-btn selected" data-emoji="💧">💧</button>
-                            <button type="button" class="emoji-btn" data-emoji="🏃">🏃</button>
-                            <button type="button" class="emoji-btn" data-emoji="📚">📚</button>
-                            <button type="button" class="emoji-btn" data-emoji="🏋️">🏋️</button>
-                            <button type="button" class="emoji-btn" data-emoji="💤">💤</button>
-                            <button type="button" class="emoji-btn" data-emoji="🍎">🍎</button>
-                            <button type="button" class="emoji-btn" data-emoji="💊">💊</button>
-                            <button type="button" class="emoji-btn" data-emoji="🧹">🧹</button>
-                            <button type="button" class="emoji-btn" data-emoji="🚶">🚶</button>
-                            <button type="button" class="emoji-btn" data-emoji="🎯">🎯</button>
-                            <button type="button" class="emoji-btn" data-emoji="🚬">🚬</button>
-                            <button type="button" class="emoji-btn" data-emoji="📺">📺</button>
-                            <input type="text" class="emoji-input" id="customEmoji" placeholder="Свой ✍️" maxlength="8" autocomplete="off">
-                        </div>
                     </div>
                     <div class="form-group">
                         <label for="habitGoal">Цель (раз в день)</label>
                         <input type="number" id="habitGoal" value="1" min="1" max="100" step="1">
                     </div>
                     <div class="form-group">
-                        <label>Период</label>
-                        <div class="period-picker" id="periodPicker">
-                            <button type="button" class="period-btn" data-days="7">1 неделя</button>
-                            <button type="button" class="period-btn" data-days="14">2 недели</button>
-                            <button type="button" class="period-btn" data-days="21">3 недели</button>
-                            <button type="button" class="period-btn" data-days="28">4 недели</button>
-                            <button type="button" class="period-btn selected" data-days="30">1 месяц</button>
-                            <button type="button" class="period-btn" data-days="60">2 месяца</button>
-                            <button type="button" class="period-btn" data-days="90">3 месяца</button>
+                        <label for="periodSlider">Период</label>
+                        <div class="period-display" id="periodDisplay" role="button" tabindex="0" title="Нажмите, чтобы ввести свой период">
+                            <span class="period-value" id="periodValue">30 дней</span>
+                            <span class="period-label">изменить</span>
                         </div>
+                        <input type="range" id="periodSlider" min="1" max="360" value="30" class="period-slider">
+                        <div class="period-presets">
+                            <button type="button" class="preset-btn" data-days="1">1 дн</button>
+                            <button type="button" class="preset-btn" data-days="7">1 нед</button>
+                            <button type="button" class="preset-btn" data-days="14">2 нед</button>
+                            <button type="button" class="preset-btn" data-days="28">4 нед</button>
+                            <button type="button" class="preset-btn" data-days="30" data-selected="true">1 мес</button>
+                            <button type="button" class="preset-btn" data-days="60">2 мес</button>
+                            <button type="button" class="preset-btn" data-days="90">3 мес</button>
+                            <button type="button" class="preset-btn" data-days="180">6 мес</button>
+                            <button type="button" class="preset-btn" data-days="360">1 год</button>
+                        </div>
+                        <input type="hidden" id="habitPeriod" value="30">
                     </div>
                     <div class="form-group">
                         <label for="habitColor">Цвет</label>
@@ -124,13 +134,25 @@
                 </form>
             </div>
         </div>
-
         <div class="confirm-overlay" id="confirmOverlay">
             <div class="confirm-box">
                 <p class="confirm-text" id="confirmText"></p>
                 <div class="confirm-actions">
                     <button class="btn-cancel" id="confirmCancel">Отмена</button>
                     <button class="btn-danger" id="confirmOk">Удалить</button>
+                </div>
+            </div>
+        </div>
+
+        <div class="period-input-overlay" id="periodInputOverlay">
+            <div class="period-input-box">
+                <h4>Свой период</h4>
+                <p class="period-input-hint">Введите количество дней</p>
+                <input type="number" class="period-input-field" id="periodCustomDays" min="1" max="365" value="30" inputmode="numeric">
+                <p class="period-input-result" id="periodCustomResult"></p>
+                <div class="confirm-actions">
+                    <button class="btn-cancel" id="periodCustomCancel">Отмена</button>
+                    <button class="btn-primary" id="periodCustomOk">Сохранить</button>
                 </div>
             </div>
         </div>
