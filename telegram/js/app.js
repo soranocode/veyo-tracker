@@ -6,6 +6,7 @@
 
     const DEFAULT_PERIOD = 30;
 
+<<<<<<< HEAD
     const PERIOD_STEPS = [1, 2, 3, 4, 5, 6, 7, 14, 21, 28, 30, 60, 90, 120, 150, 180, 210, 240, 270, 300, 330, 360];
 
     function nearestStep(value) {
@@ -126,6 +127,19 @@
         '🏖️': 'Отдых на море',
         '🥳': 'Отметить праздник',
         '🙏': 'Благодарность',
+=======
+    const EMOJI_DEFAULTS = {
+        '💧': 'Выпить воды',
+        '🏃': 'Пробежка',
+        '📚': 'Почитать',
+        '🧘': 'Йога / медитация',
+        '💤': 'Сон',
+        '🍎': 'Поесть',
+        '💊': 'Принять таблетку',
+        '🧹': 'Уборка',
+        '🚶': 'Прогулка',
+        '🎯': 'Работа над целью',
+>>>>>>> origin/master
         '🚬': 'Бросить курить',
         '📺': 'Норма телевизора'
     };
@@ -656,7 +670,10 @@
         if (editingId) {
             const habit = habits.find(h => h.id === editingId);
             if (!habit) return;
+<<<<<<< HEAD
             userEditedName = true; // При редактировании не меняем название автоматически
+=======
+>>>>>>> origin/master
             title.textContent = 'Редактировать задачу';
             submitBtn.textContent = 'Сохранить';
             $('#habitName').value = habit.name;
@@ -675,7 +692,10 @@
             $('#periodSlider').value = habit.periodDays;
             setPeriod(habit.periodDays);
         } else {
+<<<<<<< HEAD
             userEditedName = false; // При создании можем менять название при смене иконки
+=======
+>>>>>>> origin/master
             title.textContent = 'Новая задача';
             submitBtn.textContent = 'Добавить';
             $('#habitForm').reset();
@@ -813,7 +833,15 @@
                 $$('.emoji-btn').forEach(b => b.classList.remove('selected'));
                 btn.classList.add('selected');
                 $('#customEmoji').value = '';
+<<<<<<< HEAD
                 applyEmojiName(btn.dataset.emoji);
+=======
+
+                if (!editingId && EMOJI_DEFAULTS[btn.dataset.emoji]) {
+                    $('#habitName').value = EMOJI_DEFAULTS[btn.dataset.emoji];
+                    $('#nameError').hidden = true;
+                }
+>>>>>>> origin/master
             });
         });
 
