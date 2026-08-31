@@ -9,9 +9,12 @@
     let habits = [];
     let editingId = null;
     let toastTimer = null;
+    let confirmResolver = null;
 
     const $ = (sel) => document.querySelector(sel);
     const $$ = (sel) => document.querySelectorAll(sel);
+
+    const tg = window.Telegram ? window.Telegram.WebApp : null;
 
     function localDateStr(date) {
         const y = date.getFullYear();
@@ -120,12 +123,27 @@
                 /* работаем без моста (обычный браузер) */
             }
         }
+
+        if (tg && tg.setHeaderColor) {
+            try {
+                tg.setHeaderColor(dark ? '#1a1a2e' : '#f0f2f5');
+            } catch {
+                /* нет поддержки setHeaderColor */
+            }
+        }
     }
 
     function initTheme() {
         const saved = localStorage.getItem(THEME_KEY);
-        const prefersDark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
-        applyTheme(saved ? saved === 'dark' : prefersDark);
+        let dark;
+        if (saved) {
+            dark = saved === 'dark';
+        } else if (tg) {
+            dark = tg.colorScheme === 'dark';
+        } else {
+            dark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
+        }
+        applyTheme(dark);
     }
 
     function toggleTheme() {
@@ -216,6 +234,18 @@
         return div.innerHTML;
     }
 
+    function normalizeEmoji(value) {
+        return value
+            .replace(/[^\p{Extended_Pictographic}\u{200D}\u{FE0F}\u{1F3FB}-\u{1F3FF}\u{20E3}0-9#*]/gu, '')
+            .slice(0, 8);
+    }
+
+    function getSelectedEmoji() {
+        const custom = normalizeEmoji($('#customEmoji').value.trim());
+        if (custom) return custom;
+        return $('.emoji-btn.selected')?.dataset.emoji || '💧';
+    }
+
     function renderHabits() {
         const list = $('#habitsList');
         list.innerHTML = '';
@@ -301,6 +331,14 @@
         habit.completions[dateStr] = current >= habit.goal
             ? Math.max(habit.goal - 1, 0)
             : current + 1;
+
+        if (tg && tg.HapticFeedback) {
+            try {
+                tg.HapticFeedback.impactOccurred('light');
+            } catch {
+                /* нет вибрации */
+            }
+        }
     }
 
     function toggleHabit(id) {
@@ -316,11 +354,48 @@
         renderPlan();
     }
 
-    function deleteHabit(id) {
+    function isAnyOverlayOpen() {
+        return $('#modalOverlay').classList.contains('active') ||
+            $('#confirmOverlay').classList.contains('active');
+    }
+
+    function updateBackButton() {
+        if (!tg || !tg.BackButton) return;
+        try {
+            if (isAnyOverlayOpen()) {
+                tg.BackButton.show();
+            } else {
+                tg.BackButton.hide();
+            }
+        } catch {
+            /* нет BackButton */
+        }
+    }
+
+    function showConfirm(message) {
+        return new Promise((resolve) => {
+            confirmResolver = resolve;
+            $('#confirmText').textContent = message;
+            $('#confirmOverlay').classList.add('active');
+            updateBackButton();
+            setTimeout(() => $('#confirmOk').focus(), 100);
+        });
+    }
+
+    function resolveConfirm(value) {
+        $('#confirmOverlay').classList.remove('active');
+        const resolver = confirmResolver;
+        confirmResolver = null;
+        updateBackButton();
+        if (resolver) resolver(value);
+    }
+
+    async function deleteHabit(id) {
         const habit = habits.find(h => h.id === id);
         if (!habit) return;
 
-        if (!confirm(`Удалить привычку «${habit.name}»? Вся история по ней будет удалена.`)) return;
+        const ok = await showConfirm(`Удалить привычку «${habit.name}»? Вся история по ней будет удалена.`);
+        if (!ok) return;
 
         habits = habits.filter(h => h.id !== id);
         save();
@@ -376,9 +451,12 @@
             $('#habitGoal').value = habit.goal;
             $('#habitId').value = habit.id;
 
-            $$('.emoji-btn').forEach(btn => {
+            const presetBtns = $$('.emoji-btn');
+            const hasPreset = Array.from(presetBtns).some(btn => btn.dataset.emoji === habit.emoji);
+            presetBtns.forEach(btn => {
                 btn.classList.toggle('selected', btn.dataset.emoji === habit.emoji);
             });
+            $('#customEmoji').value = hasPreset ? '' : habit.emoji;
             $$('.color-btn').forEach(btn => {
                 btn.classList.toggle('selected', btn.dataset.color === habit.color);
             });
@@ -403,12 +481,14 @@
 
         $('#nameError').hidden = true;
         modal.classList.add('active');
+        updateBackButton();
         setTimeout(() => $('#habitName').focus(), 100);
     }
 
     function closeModal() {
         $('#modalOverlay').classList.remove('active');
         editingId = null;
+        updateBackButton();
     }
 
     function renderPlan() {
@@ -480,6 +560,25 @@
     }
 
     function init() {
+        if (tg) {
+            try {
+                tg.ready();
+                tg.expand();
+                tg.onEvent('themeChanged', () => {
+                    if (!localStorage.getItem(THEME_KEY)) {
+                        applyTheme(tg.colorScheme === 'dark');
+                    }
+                });
+                if (tg.BackButton) {
+                    tg.BackButton.onClick(() => {
+                        window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }));
+                    });
+                }
+            } catch {
+                /* работаем без Telegram API */
+            }
+        }
+
         initTheme();
         load();
 
@@ -500,7 +599,16 @@
             btn.addEventListener('click', () => {
                 $$('.emoji-btn').forEach(b => b.classList.remove('selected'));
                 btn.classList.add('selected');
+                $('#customEmoji').value = '';
             });
+        });
+
+        $('#customEmoji').addEventListener('input', () => {
+            const input = $('#customEmoji');
+            input.value = normalizeEmoji(input.value);
+            if (input.value.trim()) {
+                $$('.emoji-btn').forEach(b => b.classList.remove('selected'));
+            }
         });
 
         $$('.color-btn').forEach(btn => {
@@ -521,11 +629,17 @@
             $('#nameError').hidden = true;
         });
 
+        $('#confirmOk').addEventListener('click', () => resolveConfirm(true));
+        $('#confirmCancel').addEventListener('click', () => resolveConfirm(false));
+        $('#confirmOverlay').addEventListener('click', (e) => {
+            if (e.target === e.currentTarget) resolveConfirm(false);
+        });
+
         $('#habitForm').addEventListener('submit', (e) => {
             e.preventDefault();
 
             const name = $('#habitName').value.trim();
-            const emoji = $('.emoji-btn.selected')?.dataset.emoji || '💧';
+            const emoji = getSelectedEmoji();
             const color = $('.color-btn.selected')?.dataset.color || '#6c5ce7';
             const goal = Math.min(Math.max(parseInt($('#habitGoal').value, 10) || 1, 1), 100);
             const periodDays = Math.min(Math.max(
@@ -550,7 +664,12 @@
         });
 
         document.addEventListener('keydown', (e) => {
-            if (e.key === 'Escape' && $('#modalOverlay').classList.contains('active')) {
+            if (e.key !== 'Escape') return;
+            if ($('#confirmOverlay').classList.contains('active')) {
+                resolveConfirm(false);
+                return;
+            }
+            if ($('#modalOverlay').classList.contains('active')) {
                 closeModal();
             }
         });

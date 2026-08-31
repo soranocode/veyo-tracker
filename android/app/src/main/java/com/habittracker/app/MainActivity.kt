@@ -104,7 +104,9 @@ class MainActivity : Activity() {
 
         webView.evaluateJavascript(
             "(function(){var m=document.getElementById('modalOverlay');" +
-                "return m&&m.classList.contains('active')?'open':'closed';})()"
+                "var c=document.getElementById('confirmOverlay');" +
+                "return ((m&&m.classList.contains('active'))||(c&&c.classList.contains('active')))" +
+                "?'open':'closed';})()"
         ) { result ->
             if (result.contains("open")) {
                 webView.evaluateJavascript(

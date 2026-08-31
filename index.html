@@ -88,6 +88,7 @@
                             <button type="button" class="emoji-btn" data-emoji="🧹">🧹</button>
                             <button type="button" class="emoji-btn" data-emoji="🚶">🚶</button>
                             <button type="button" class="emoji-btn" data-emoji="🎯">🎯</button>
+                            <input type="text" class="emoji-input" id="customEmoji" placeholder="Свой ✍️" maxlength="8" autocomplete="off">
                         </div>
                     </div>
                     <div class="form-group">
@@ -120,6 +121,15 @@
                     <input type="hidden" id="habitId" value="">
                     <button type="submit" class="btn-primary btn-full" id="submitBtn">Добавить</button>
                 </form>
+            </div>
+        </div>
+        <div class="confirm-overlay" id="confirmOverlay">
+            <div class="confirm-box">
+                <p class="confirm-text" id="confirmText"></p>
+                <div class="confirm-actions">
+                    <button class="btn-cancel" id="confirmCancel">Отмена</button>
+                    <button class="btn-danger" id="confirmOk">Удалить</button>
+                </div>
             </div>
         </div>
     </div>

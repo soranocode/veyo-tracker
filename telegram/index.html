@@ -1,0 +1,141 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Habit Tracker — Трекер привычек</title>
+    <script src="https://telegram.org/js/telegram-web-app.js"></script>
+    <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+    <div class="app">
+        <header class="header">
+            <div class="header-left">
+                <h1>Habit Tracker</h1>
+                <span class="date-display" id="currentDate"></span>
+            </div>
+            <div class="header-right">
+                <button class="btn-icon" id="themeToggle" title="Переключить тему">🌙</button>
+                <button class="btn-primary" id="addHabitBtn">+ Привычка</button>
+            </div>
+        </header>
+
+        <section class="stats-bar">
+            <div class="stat-card" title="Дней подряд, когда выполнены все привычки">
+                <span class="stat-value" id="statStreak">0</span>
+                <span class="stat-label">Серия дней</span>
+            </div>
+            <div class="stat-card">
+                <span class="stat-value" id="statToday">0/0</span>
+                <span class="stat-label">Сегодня</span>
+            </div>
+            <div class="stat-card">
+                <span class="stat-value" id="statTotal">0</span>
+                <span class="stat-label">Всего выполнено</span>
+            </div>
+            <div class="stat-card">
+                <span class="stat-value" id="statRate">—</span>
+                <span class="stat-label">Прогресс периода</span>
+            </div>
+        </section>
+
+        <main class="main">
+            <div class="habits-section">
+                <div class="section-header">
+                    <h2>Сегодня</h2>
+                    <span class="section-subtitle" id="dayProgress"></span>
+                </div>
+                <div class="habits-list" id="habitsList">
+                    <div class="empty-state" id="emptyState">
+                        <span class="empty-icon">📋</span>
+                        <p>Добавьте первую привычку, чтобы начать отслеживание</p>
+                    </div>
+                </div>
+            </div>
+
+            <div class="plan-section">
+                <div class="section-header">
+                    <h2>План на период</h2>
+                    <span class="section-subtitle">Клик по дню — отметить выполнение</span>
+                </div>
+                <div class="plan" id="plan"></div>
+            </div>
+        </main>
+
+        <div class="modal-overlay" id="modalOverlay">
+            <div class="modal">
+                <div class="modal-header">
+                    <h3 id="modalTitle">Новая привычка</h3>
+                    <button class="btn-close" id="modalClose">&times;</button>
+                </div>
+                <form id="habitForm">
+                    <div class="form-group">
+                        <label for="habitName">Название</label>
+                        <input type="text" id="habitName" placeholder="Например: Пить воду" maxlength="60" required>
+                        <p class="form-error" id="nameError" hidden>Введите название привычки</p>
+                    </div>
+                    <div class="form-group">
+                        <label>Иконка</label>
+                        <div class="emoji-picker" id="emojiPicker">
+                            <button type="button" class="emoji-btn selected" data-emoji="💧">💧</button>
+                            <button type="button" class="emoji-btn" data-emoji="🏃">🏃</button>
+                            <button type="button" class="emoji-btn" data-emoji="📚">📚</button>
+                            <button type="button" class="emoji-btn" data-emoji="🧘">🧘</button>
+                            <button type="button" class="emoji-btn" data-emoji="💤">💤</button>
+                            <button type="button" class="emoji-btn" data-emoji="🍎">🍎</button>
+                            <button type="button" class="emoji-btn" data-emoji="💊">💊</button>
+                            <button type="button" class="emoji-btn" data-emoji="🎵">🎵</button>
+                            <button type="button" class="emoji-btn" data-emoji="✍️">✍️</button>
+                            <button type="button" class="emoji-btn" data-emoji="🧹">🧹</button>
+                            <button type="button" class="emoji-btn" data-emoji="🚶">🚶</button>
+                            <button type="button" class="emoji-btn" data-emoji="🎯">🎯</button>
+                            <input type="text" class="emoji-input" id="customEmoji" placeholder="Свой ✍️" maxlength="8" autocomplete="off">
+                        </div>
+                    </div>
+                    <div class="form-group">
+                        <label for="habitGoal">Цель (раз в день)</label>
+                        <input type="number" id="habitGoal" value="1" min="1" max="100" step="1">
+                    </div>
+                    <div class="form-group">
+                        <label>Период</label>
+                        <div class="period-picker" id="periodPicker">
+                            <button type="button" class="period-btn" data-days="7">1 неделя</button>
+                            <button type="button" class="period-btn" data-days="14">2 недели</button>
+                            <button type="button" class="period-btn" data-days="21">3 недели</button>
+                            <button type="button" class="period-btn" data-days="28">4 недели</button>
+                            <button type="button" class="period-btn selected" data-days="30">1 месяц</button>
+                            <button type="button" class="period-btn" data-days="60">2 месяца</button>
+                            <button type="button" class="period-btn" data-days="90">3 месяца</button>
+                        </div>
+                    </div>
+                    <div class="form-group">
+                        <label for="habitColor">Цвет</label>
+                        <div class="color-picker" id="colorPicker">
+                            <button type="button" class="color-btn selected" data-color="#6c5ce7" style="background:#6c5ce7"></button>
+                            <button type="button" class="color-btn" data-color="#00b894" style="background:#00b894"></button>
+                            <button type="button" class="color-btn" data-color="#fdcb6e" style="background:#fdcb6e"></button>
+                            <button type="button" class="color-btn" data-color="#e17055" style="background:#e17055"></button>
+                            <button type="button" class="color-btn" data-color="#0984e3" style="background:#0984e3"></button>
+                            <button type="button" class="color-btn" data-color="#e84393" style="background:#e84393"></button>
+                        </div>
+                    </div>
+                    <input type="hidden" id="habitId" value="">
+                    <button type="submit" class="btn-primary btn-full" id="submitBtn">Добавить</button>
+                </form>
+            </div>
+        </div>
+
+        <div class="confirm-overlay" id="confirmOverlay">
+            <div class="confirm-box">
+                <p class="confirm-text" id="confirmText"></p>
+                <div class="confirm-actions">
+                    <button class="btn-cancel" id="confirmCancel">Отмена</button>
+                    <button class="btn-danger" id="confirmOk">Удалить</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="js/app.js"></script>
+</body>
+</html>
