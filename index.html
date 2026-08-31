@@ -2,7 +2,7 @@
 <html lang="ru">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
     <title>Habit Tracker — Трекер привычек</title>
     <link rel="stylesheet" href="css/style.css">
 </head>
@@ -20,7 +20,7 @@
         </header>
 
         <section class="stats-bar">
-            <div class="stat-card" title="Дней подряд, когда выполнены все привычки">
+            <div class="stat-card" title="Дней подряд, когда выполнены все задачи">
                 <span class="stat-value" id="statStreak">0</span>
                 <span class="stat-label">Серия дней</span>
             </div>
@@ -47,7 +47,7 @@
                 <div class="habits-list" id="habitsList">
                     <div class="empty-state" id="emptyState">
                         <span class="empty-icon">📋</span>
-                        <p>Добавьте первую привычку, чтобы начать отслеживание</p>
+                        <p>Добавьте первую задачу, чтобы начать отслеживание</p>
                     </div>
                 </div>
             </div>
@@ -64,14 +64,14 @@
         <div class="modal-overlay" id="modalOverlay">
             <div class="modal">
                 <div class="modal-header">
-                    <h3 id="modalTitle">Новая привычка</h3>
+                    <h3 id="modalTitle">Новая задача</h3>
                     <button class="btn-close" id="modalClose">&times;</button>
                 </div>
                 <form id="habitForm">
                     <div class="form-group">
                         <label for="habitName">Название</label>
                         <input type="text" id="habitName" placeholder="Например: Пить воду" maxlength="60" required>
-                        <p class="form-error" id="nameError" hidden>Введите название привычки</p>
+                        <p class="form-error" id="nameError" hidden>Введите название задачи</p>
                     </div>
                     <div class="form-group">
                         <label>Иконка</label>
@@ -79,15 +79,15 @@
                             <button type="button" class="emoji-btn selected" data-emoji="💧">💧</button>
                             <button type="button" class="emoji-btn" data-emoji="🏃">🏃</button>
                             <button type="button" class="emoji-btn" data-emoji="📚">📚</button>
-                            <button type="button" class="emoji-btn" data-emoji="🧘">🧘</button>
+                            <button type="button" class="emoji-btn" data-emoji="🏋️">🏋️</button>
                             <button type="button" class="emoji-btn" data-emoji="💤">💤</button>
                             <button type="button" class="emoji-btn" data-emoji="🍎">🍎</button>
                             <button type="button" class="emoji-btn" data-emoji="💊">💊</button>
-                            <button type="button" class="emoji-btn" data-emoji="🎵">🎵</button>
-                            <button type="button" class="emoji-btn" data-emoji="✍️">✍️</button>
                             <button type="button" class="emoji-btn" data-emoji="🧹">🧹</button>
                             <button type="button" class="emoji-btn" data-emoji="🚶">🚶</button>
                             <button type="button" class="emoji-btn" data-emoji="🎯">🎯</button>
+                            <button type="button" class="emoji-btn" data-emoji="🚬">🚬</button>
+                            <button type="button" class="emoji-btn" data-emoji="📺">📺</button>
                             <input type="text" class="emoji-input" id="customEmoji" placeholder="Свой ✍️" maxlength="8" autocomplete="off">
                         </div>
                     </div>

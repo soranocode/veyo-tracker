@@ -6,6 +6,122 @@
 
     const DEFAULT_PERIOD = 30;
 
+    const EMOJI_DEFAULTS = {
+        '💧': 'Выпить воды',
+        '🏃': 'Пробежка',
+        '📚': 'Прочитать',
+        '🏋️': 'Спорт',
+        '💤': 'Сон',
+        '🍎': 'Поесть',
+        '💊': 'Принять таблетку',
+        '🧹': 'Уборка',
+        '🚶': 'Прогулка',
+        '🎯': 'Работа над целью',
+        '🚬': 'Бросить курить',
+        '📺': 'Посмотреть сериал',
+        '☕': 'Выпить кофе',
+        '🍵': 'Выпить чай',
+        '🥗': 'Позаниматься спортом',
+        '🥦': 'Здоровое питание',
+        '🧘': 'Медитация',
+        '📝': 'Планирование',
+        '💻': 'Работа за компьютером',
+        '📱': 'Меньше телефона',
+        '🧼': 'Мыть руки',
+        '🦷': 'Чистить зубы',
+        '💊': 'Принять лекарство',
+        '🩺': 'Записаться к врачу',
+        '🧩': 'Головоломка',
+        '🎮': 'Игры',
+        '🎨': 'Творчество',
+        '🎸': 'Музыка',
+        '🎹': 'Игра на пианино',
+        '📸': 'Фотография',
+        '🌱': 'Расти растения',
+        '🐕': 'Выгул собаки',
+        '🐈': 'Уход за котом',
+        '🛁': 'Принять ванну',
+        '🧴': 'Уход за кожей',
+        '💰': 'Отложить деньги',
+        '🛒': 'Сходить в магазин',
+        '🧺': 'Постирать',
+        '🧹': 'Уборка дома',
+        '🍳': 'Приготовить еду',
+        '☕': 'Перерыв на кофе',
+        '🧠': 'Учить новое',
+        '🇬🇧': 'Английский язык',
+        '🇪🇸': 'Испанский язык',
+        '🇩🇪': 'Немецкий язык',
+        '🇨🇳': 'Китайский язык',
+        '🗣️': 'Практика речи',
+        '✍️': 'Написание текстов',
+        '📖': 'Чтение книги',
+        '🎧': 'Подкаст/аудиокнига',
+        '🛌': 'Ранний сон',
+        '🌅': 'Ранний подъём',
+        '💪': 'Силовые тренировки',
+        '🏊': 'Плавание',
+        '🚴': 'Велосипед',
+        '⚽': 'Футбол',
+        '🏀': 'Баскетбол',
+        '🎾': 'Теннис',
+        '🧗': 'Скалолазание',
+        '🏃‍♀️': 'Бег',
+        '🧘‍♀️': 'Йога',
+        '🙏': 'Благодарность/молитва',
+        '😊': 'Улыбаться',
+        '🙌': 'Праздновать успех',
+        '📅': 'Запланировать день',
+        '⏰': 'Таймер/Помодоро',
+        '🧩': 'Пазл/головоломка',
+        '🎲': 'Настольные игры',
+        '🧸': 'Уход за питомцем',
+        '🌿': 'Время на природе',
+        '🌲': 'Лесная прогулка',
+        '🏞️': 'Поход в горы',
+        '🏖️': 'Пляж/море',
+        '🚿': 'Душ',
+        '🛌': 'Отдых',
+        '🤝': 'Встреча с другом',
+        '👨‍👩‍👧‍👦': 'Семейное время',
+        '💌': 'Написать письмо',
+        '📞': 'Позвонить близким',
+        '🎁': 'Сделать подарок',
+        '🥳': 'Праздник',
+        '🎂': 'День рождения',
+        '🧹': 'Генеральная уборка',
+        '🗑️': 'Вынести мусор',
+        '🚰': 'Прополоскать рот',
+        '💊': 'Витамины',
+        '🧴': 'Солнцезащита',
+        '🕶️': 'Очки от солнца',
+        '🧢': 'Кепка/шапка',
+        '🧣': 'Шарф',
+        '🧤': 'Перчатки',
+        '🧦': 'Носки',
+        '👟': 'Кроссовки',
+        '👕': 'Футболка',
+        '👖': 'Джинсы',
+        '🧥': 'Куртка',
+        '👗': 'Платье',
+        '👔': 'Рубашка',
+        '👗': 'Юбка',
+        '👚': 'Блузка',
+        '🧥': 'Пальто',
+        '🧣': 'Платок',
+        '🧤': 'Варежки',
+        '🧦': 'Носки',
+        '👟': 'Кеды',
+        '👞': 'Туфли',
+        '👠': 'Туфли на каблуке',
+        '👢': 'Сапоги',
+        '🥿': 'Балетки',
+        '👡': 'Сандалии',
+        '🩴': 'Шлепанцы',
+        '🧦': 'Носки',
+        '🧦': 'Носки'
+    };
+
     let habits = [];
     let editingId = null;
     let toastTimer = null;
@@ -223,7 +339,7 @@
         div.id = 'emptyState';
         div.innerHTML = `
             <span class="empty-icon">📋</span>
-            <p>Добавьте первую привычку, чтобы начать отслеживание</p>
+            <p>Добавьте первую задачу, чтобы начать отслеживание</p>
         `;
         return div;
     }
@@ -377,6 +493,7 @@
             confirmResolver = resolve;
             $('#confirmText').textContent = message;
             $('#confirmOverlay').classList.add('active');
+            document.body.classList.add('modal-open');
             updateBackButton();
             setTimeout(() => $('#confirmOk').focus(), 100);
         });
@@ -384,6 +501,7 @@
 
     function resolveConfirm(value) {
         $('#confirmOverlay').classList.remove('active');
+        document.body.classList.remove('modal-open');
         const resolver = confirmResolver;
         confirmResolver = null;
         updateBackButton();
@@ -394,7 +512,7 @@
         const habit = habits.find(h => h.id === id);
         if (!habit) return;
 
-        const ok = await showConfirm(`Удалить привычку «${habit.name}»? Вся история по ней будет удалена.`);
+        const ok = await showConfirm(`Удалить задачу «${habit.name}»? Вся история по ней будет удалена.`);
         if (!ok) return;
 
         habits = habits.filter(h => h.id !== id);
@@ -445,7 +563,7 @@
         if (editingId) {
             const habit = habits.find(h => h.id === editingId);
             if (!habit) return;
-            title.textContent = 'Редактировать привычку';
+            title.textContent = 'Редактировать задачу';
             submitBtn.textContent = 'Сохранить';
             $('#habitName').value = habit.name;
             $('#habitGoal').value = habit.goal;
@@ -464,7 +582,7 @@
                 btn.classList.toggle('selected', parseInt(btn.dataset.days, 10) === habit.periodDays);
             });
         } else {
-            title.textContent = 'Новая привычка';
+            title.textContent = 'Новая задача';
             submitBtn.textContent = 'Добавить';
             $('#habitForm').reset();
             $('#habitId').value = '';
@@ -481,12 +599,14 @@
 
         $('#nameError').hidden = true;
         modal.classList.add('active');
+        document.body.classList.add('modal-open');
         updateBackButton();
         setTimeout(() => $('#habitName').focus(), 100);
     }
 
     function closeModal() {
         $('#modalOverlay').classList.remove('active');
+        document.body.classList.remove('modal-open');
         editingId = null;
         updateBackButton();
     }
@@ -496,7 +616,7 @@
         plan.innerHTML = '';
 
         if (habits.length === 0) {
-            plan.innerHTML = '<p style="color:var(--text-secondary);font-size:0.85rem;text-align:center;padding:16px;">Добавьте привычки, чтобы увидеть план на период</p>';
+            plan.innerHTML = '<p style="color:var(--text-secondary);font-size:0.85rem;text-align:center;padding:16px;">Добавьте задачи, чтобы увидеть план на период</p>';
             return;
         }
 
@@ -600,6 +720,11 @@
                 $$('.emoji-btn').forEach(b => b.classList.remove('selected'));
                 btn.classList.add('selected');
                 $('#customEmoji').value = '';
+
+                if (!editingId && EMOJI_DEFAULTS[btn.dataset.emoji]) {
+                    $('#habitName').value = EMOJI_DEFAULTS[btn.dataset.emoji];
+                    $('#nameError').hidden = true;
+                }
             });
         });
 
@@ -608,6 +733,10 @@
             input.value = normalizeEmoji(input.value);
             if (input.value.trim()) {
                 $$('.emoji-btn').forEach(b => b.classList.remove('selected'));
+                if (!editingId && EMOJI_DEFAULTS[input.value.trim()]) {
+                    $('#habitName').value = EMOJI_DEFAULTS[input.value.trim()];
+                    $('#nameError').hidden = true;
+                }
             }
         });
 
