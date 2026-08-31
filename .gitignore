@@ -1,0 +1,19 @@
+# Android / Gradle
+android/.gradle/
+android/build/
+android/app/build/
+android/local.properties
+android/.idea/
+android/*.iml
+android/captures/
+android/.cxx/
+android/*.apk
+
+# OS
+Thumbs.db
+Desktop.ini
+.DS_Store
+
+# Editor
+*.swp
+.vscode/
