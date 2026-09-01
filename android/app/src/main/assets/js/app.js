@@ -3,6 +3,9 @@
 
     const STORAGE_KEY = 'habit-tracker-data';
     const THEME_KEY = 'habit-tracker-theme';
+    const PLANS_KEY = 'habit-tracker-plans';
+    const LIFETIME_KEY = 'habit-tracker-lifetime';
+    const HISTORY_KEY = 'habit-tracker-history';
 
     const DEFAULT_PERIOD = 30;
 
@@ -26,6 +29,14 @@
         days = parseInt(days, 10) || 0;
         if (days <= 6) return pluralDays(days, 'день', 'дня', 'дней');
         if (days < 30) return pluralDays(days, 'день', 'дня', 'дней');
+        
+        // Стандартные периоды
+        if (days === 30) return pluralDays(1, 'месяц', 'месяца', 'месяцев');
+        if (days === 60) return pluralDays(2, 'месяц', 'месяца', 'месяцев');
+        if (days === 90) return pluralDays(3, 'месяц', 'месяца', 'месяцев');
+        if (days === 180) return pluralDays(6, 'месяц', 'месяца', 'месяцев');
+        if (days === 365) return pluralDays(12, 'месяц', 'месяца', 'месяцев');
+        
         const months = Math.floor(days / 30);
         const rest = days % 30;
         let parts = [];
@@ -33,6 +44,52 @@
         if (rest > 0) {
             const weeks = Math.floor(rest / 7);
             const d = rest % 7;
+            if (weeks > 0) parts.push(pluralDays(weeks, 'неделя', 'недели', 'недель'));
+            if (d > 0) parts.push(pluralDays(d, 'день', 'дня', 'дней'));
+        }
+        return parts.join(' ');
+    }
+
+    function formatPeriodFromDate(days, startDate) {
+        days = parseInt(days, 10) || 0;
+        if (days <= 6) return pluralDays(days, 'день', 'дня', 'дней');
+        if (days < 30) return pluralDays(days, 'день', 'дня', 'дней');
+        
+        // Специальный случай: 365 дней = 1 год = 12 месяцев (без дней)
+        if (days === 365) return pluralDays(12, 'месяц', 'месяца', 'месяцев');
+
+        // Разбор стартовой даты
+        const [year, month, day] = startDate.split('-').map(Number);
+        let remaining = days;
+        let months_count = 0;
+        let current_year = year;
+        let current_month = month;
+
+        // Считаем полные месяцы от начальной даты
+        while (remaining > 0) {
+            // Получить количество дней в текущем месяце (от текущего дня)
+            const daysInCurrentMonth = new Date(current_year, current_month, 0).getDate();
+            const daysLeftInMonth = daysInCurrentMonth - day + 1;
+
+            if (remaining >= daysLeftInMonth) {
+                remaining -= daysLeftInMonth;
+                months_count++;
+                // Переходим на следующий месяц
+                current_month++;
+                if (current_month > 12) {
+                    current_month = 1;
+                    current_year++;
+                }
+            } else {
+                break;
+            }
+        }
+
+        let parts = [];
+        if (months_count > 0) parts.push(pluralDays(months_count, 'месяц', 'месяца', 'месяцев'));
+        if (remaining > 0) {
+            const weeks = Math.floor(remaining / 7);
+            const d = remaining % 7;
             if (weeks > 0) parts.push(pluralDays(weeks, 'неделя', 'недели', 'недель'));
             if (d > 0) parts.push(pluralDays(d, 'день', 'дня', 'дней'));
         }
@@ -127,11 +184,24 @@
         '🥳': 'Отметить праздник',
         '🙏': 'Благодарность',
         '🚬': 'Бросить курить',
-        '📺': 'Норма телевизора'
+        '📺': 'Норма телевизора',
+        '✈️': 'Путешествие'
     };
 
     let habits = [];
+    let plans = [];
     let editingId = null;
+    let editingPlanId = null;
+    let editingItemId = null;
+    let itemTargetPlanId = null;
+    let planUserEditedName = false;
+    let itemUserEditedName = false;
+    let activeTab = 'habits';
+    let movingHabitId = null;
+    let moveOverlayScrollY = null;
+    let lifetimeTotal = 0;
+    let stats = { total: 0, today: 0, todayDate: '' };
+    let history = [];
     let toastTimer = null;
     let confirmResolver = null;
     let userEditedName = false;
@@ -165,7 +235,12 @@
     }
 
     function endDateOf(habit) {
+        if (habit.periodDays === null) return null;
         return addDays(habit.startDate, habit.periodDays - 1);
+    }
+
+    function isPeriodless(habit) {
+        return habit.periodDays === null;
     }
 
     function formatShort(dateStr) {
@@ -193,14 +268,39 @@
 
         habits.forEach(h => {
             h.goal = Math.min(Math.max(parseInt(h.goal, 10) || 1, 1), 100);
-            h.periodDays = Math.min(Math.max(parseInt(h.periodDays, 10) || DEFAULT_PERIOD, 1), 365);
+            h.periodDays = (h.periodDays === null || h.periodDays === undefined || h.periodDays === '')
+                ? null
+                : Math.min(Math.max(parseInt(h.periodDays, 10) || DEFAULT_PERIOD, 1), 365);
             if (typeof h.completions !== 'object' || h.completions === null || Array.isArray(h.completions)) {
                 h.completions = {};
             }
+            if (typeof h.lifetimeCount !== 'number' || h.lifetimeCount < 0) h.lifetimeCount = 0;
             if (!h.emoji) h.emoji = '💧';
             if (!h.color) h.color = '#6c5ce7';
             if (!h.startDate) h.startDate = h.createdAt || today();
         });
+    }
+
+    function loadLifetime() {
+        try {
+            lifetimeTotal = parseInt(localStorage.getItem(LIFETIME_KEY), 10) || 0;
+        } catch {
+            lifetimeTotal = 0;
+        }
+    }
+
+    // Задачи без периода: если выполнена (в любой прошедший день) — удалить.
+    // Счётчики stats при этом сохраняются (накопительный эффект).
+    function purgeDonePeriodlessHabits() {
+        const t = today();
+        const before = habits.length;
+        habits = habits.filter(h => {
+            if (!isPeriodless(h)) return true;
+            return !Object.keys(h.completions || {}).some(d => {
+                return d < t && (h.completions[d] || 0) > 0;
+            });
+        });
+        if (habits.length !== before) save();
     }
 
     function save() {
@@ -290,26 +390,30 @@
         return getHabitCount(habit, today()) >= habit.goal;
     }
 
-    function isDayComplete(date) {
-        const ds = localDateStr(date);
-        return habits.every(h => getHabitCount(h, ds) >= h.goal);
-    }
-
+    // Серия дней считается по истории выполнений:
+    // — день засчитывается при ПЕРВОМ выполненном задачами (любой задачи) за день;
+    // — удаление записей из истории прерывает серию (нет записей за день — день не считается);
+    // — удаление задач из главного меню серию не рвёт (записи в истории остаются).
     function calculateStreak() {
-        if (habits.length === 0) return 0;
+        if (history.length === 0) return 0;
 
+        const daysWithEntries = new Set(history.map(h => h.date));
         let streak = 0;
         const d = new Date();
 
-        if (!isDayComplete(d)) {
+        // Сегодня ещё не выполнено — серия ведётся со вчера (сегодня не засчитан)
+        if (!daysWithEntries.has(localDateStr(d))) {
             d.setDate(d.getDate() - 1);
         }
 
-        while (isDayComplete(d)) {
+        while (daysWithEntries.has(localDateStr(d))) {
             streak++;
             d.setDate(d.getDate() - 1);
+            if (streak > 3650) break;
         }
 
+        stats.streak = streak;
+        saveStats();
         return streak;
     }
 
@@ -322,28 +426,167 @@
     }
 
     function calculateStats() {
-        const completed = habits.filter(h => isCompletedToday(h)).length;
-        const total = habits.length;
-
-        let totalCompletions = 0;
-        let totalPeriodDays = 0;
-        let donePeriodDays = 0;
-
-        habits.forEach(h => {
-            if (h.completions) {
-                totalCompletions += Object.values(h.completions).reduce((a, b) => a + b, 0);
-            }
-            totalPeriodDays += h.periodDays;
-            donePeriodDays += countDaysDone(h);
+        const t = today();
+        let total = habits.length;
+        plans.forEach(p => {
+            p.items.forEach(it => {
+                total++;
+            });
         });
 
-        const rate = totalPeriodDays > 0 ? Math.round((donePeriodDays / totalPeriodDays) * 100) : 0;
-
         $('#statStreak').textContent = calculateStreak();
-        $('#statToday').textContent = `${completed}/${total}`;
-        $('#statTotal').textContent = totalCompletions;
-        $('#statRate').textContent = total > 0 ? `${rate}%` : '—';
-        $('#dayProgress').textContent = total > 0 ? `${rate}% за период` : '';
+        $('#statToday').textContent = `${stats.today}/${Math.max(total, stats.today)}`;
+        $('#statTotal').textContent = stats.total;
+        $('#dayProgress').textContent = '';
+    }
+
+    // ===================== Счётчики (постоянные, не зависят от удаления задач) =====================
+    const STATS_KEY = 'habit-tracker-stats';
+
+    function loadStats() {
+        let todayStr = today();
+        try {
+            const raw = localStorage.getItem(STATS_KEY);
+            if (raw) {
+                stats = JSON.parse(raw) || { total: 0, today: 0, todayDate: '' };
+            } else {
+                // Миграция: собрать счётчики из текущих данных один раз
+                let total = lifetimeTotal;
+                let todayCount = 0;
+                habits.forEach(h => {
+                    if (isPeriodless(h)) {
+                        if (getHabitCount(h, todayStr) >= h.goal) todayCount++;
+                        return;
+                    }
+                    total += countDaysDone(h);
+                    if (getHabitCount(h, todayStr) >= h.goal) todayCount++;
+                });
+                plans.forEach(p => {
+                    p.items.forEach(it => {
+                        total += planItemDoneDays(p, it);
+                        if (isPlanItemDone(p, it, todayStr)) todayCount++;
+                    });
+                });
+                stats = { total, today: todayCount, todayDate: todayStr };
+                localStorage.setItem(STATS_KEY, JSON.stringify(stats));
+            }
+        } catch {
+            stats = { total: 0, today: 0, todayDate: '' };
+        }
+        if (!stats) stats = { total: 0, today: 0, todayDate: '' };
+        // «Сегодня» обнуляется только при наступлении нового дня (00:00)
+        if (stats.todayDate !== todayStr) {
+            stats.today = 0;
+            stats.todayDate = todayStr;
+            saveStats();
+        }
+    }
+
+    function saveStats() {
+        localStorage.setItem(STATS_KEY, JSON.stringify(stats));
+    }
+
+    // ===================== История выполнений =====================
+    function loadHistory() {
+        try {
+            const raw = localStorage.getItem(HISTORY_KEY);
+            const parsed = raw ? JSON.parse(raw) : [];
+            history = Array.isArray(parsed) ? parsed.filter(h => h && typeof h.id === 'string') : [];
+        } catch {
+            history = [];
+        }
+    }
+
+    function saveHistory() {
+        if (history.length > 500) history.length = 500;
+        localStorage.setItem(HISTORY_KEY, JSON.stringify(history));
+    }
+
+    function logCompletion(container, item, dateStr, wasDone, isDone) {
+        if (isDone && !wasDone) {
+            history.unshift({
+                id: item.id,
+                date: dateStr,
+                name: item.name,
+                emoji: item.emoji,
+                color: container.color || null
+            });
+            stats.total += 1;
+            if (stats.todayDate === dateStr) stats.today += 1;
+        } else if (!isDone && wasDone) {
+            const idx = history.findIndex(h => h.id === item.id && h.date === dateStr);
+            if (idx >= 0) {
+                history.splice(idx, 1);
+                stats.total = Math.max(stats.total - 1, 0);
+                if (stats.todayDate === dateStr) stats.today = Math.max(stats.today - 1, 0);
+            }
+        }
+        saveHistory();
+        saveStats();
+    }
+
+    function formatHistoryDate(dateStr) {
+        return new Date(dateStr + 'T00:00:00')
+            .toLocaleDateString('ru-RU', { day: 'numeric', month: 'long', year: 'numeric' });
+    }
+
+    function renderHistory() {
+        const list = $('#historyList');
+        if (!list) return;
+        if (history.length === 0) {
+            list.innerHTML = '<div class="history-empty">История пуста — выполните задачу, и она появится здесь</div>';
+            return;
+        }
+        list.innerHTML = '';
+        history.forEach(h => {
+            const row = document.createElement('div');
+            row.className = 'history-row';
+            row.innerHTML = `
+                <div class="history-emoji">${h.emoji || '✅'}</div>
+                <div class="history-info">
+                    <div class="history-name">${escapeHtml(h.name)}</div>
+                    <div class="history-date">${formatHistoryDate(h.date)}</div>
+                </div>
+                <button type="button" class="history-del" title="Удалить из истории" aria-label="Удалить из истории">🗑</button>
+            `;
+            row.querySelector('.history-del').addEventListener('click', () => {
+                const entry = history.find(x => x.id === h.id && x.date === h.date);
+                history = history.filter(x => x.id !== h.id || x.date !== h.date);
+                if (entry) {
+                    stats.total = Math.max(stats.total - 1, 0);
+                    if (stats.todayDate === entry.date) stats.today = Math.max(stats.today - 1, 0);
+                    saveStats();
+                }
+                saveHistory();
+                renderHistory();
+                calculateStats();
+                showToast('Удалено из истории');
+            });
+            list.appendChild(row);
+        });
+    }
+
+    function openHistoryModal() {
+        renderHistory();
+        $('#historyOverlay').classList.add('active');
+        document.body.classList.add('modal-open');
+        updateBackButton();
+    }
+
+    function closeHistoryModal() {
+        $('#historyOverlay').classList.remove('active');
+        document.body.classList.remove('modal-open');
+        updateBackButton();
+    }
+
+    function focusTodaySection() {
+        if (activeTab === 'plans') switchTab('habits');
+        const el = $('#habitsSection');
+        if (el) {
+            requestAnimationFrame(() => {
+                el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            });
+        }
     }
 
     function createEmptyState() {
@@ -351,9 +594,10 @@
         div.className = 'empty-state';
         div.id = 'emptyState';
         div.innerHTML = `
-            <span class="empty-icon">📋</span>
+            <button type="button" class="empty-icon" id="emptyAddBtn" title="Добавить задачу" aria-label="Добавить задачу">📋</button>
             <p>Добавьте первую задачу, чтобы начать отслеживание</p>
         `;
+        div.querySelector('#emptyAddBtn').addEventListener('click', () => openModal());
         return div;
     }
 
@@ -364,9 +608,17 @@
     }
 
     function normalizeEmoji(value) {
-        // Оставляем первые символы (до 8) как есть, без агрессивной фильтрации
-        // На мобиле emoji picker даёт правильный эмодзи, на desktop пользователь копирует
-        return value.substring(0, 8);
+        // Оставляем ровно один смайлик (grapheme cluster), чтобы не резать ZWJ-последовательности
+        const v = value.trim();
+        if (!v) return '';
+        if (Intl && Intl.Segmenter) {
+            try {
+                const seg = new Intl.Segmenter('ru', { granularity: 'grapheme' });
+                const first = Array.from(seg.segment(v))[0];
+                if (first) return first.segment;
+            } catch { /* fallback ниже */ }
+        }
+        return Array.from(v)[0] || v;
     }
 
     function emojiKey(emoji) {
@@ -404,11 +656,78 @@
         return matched;
     }
 
+    function renderPlanItemCard(plan, item, t, end) {
+        const count = getPlanItemCount(plan, item.id, t);
+        const done = count >= item.goal;
+        const progress = Math.min((count / item.goal) * 100, 100);
+        const todayPct = Math.round(progress);
+        const itemPct = Math.round(planItemProgressFrac(plan, item) * 100);
+        const inPeriod = t >= plan.startDate && t <= end;
+        const card = document.createElement('div');
+        card.className = `habit-card plan-item-card${done ? ' completed' : ''}`;
+        card.style.setProperty('--habit-color', plan.color);
+        card.innerHTML = `
+            <div class="habit-emoji">${item.emoji}</div>
+            <div class="habit-info">
+                <div class="habit-name-row">
+                    <div class="habit-name">${escapeHtml(item.name)}</div>
+                    <span class="habit-pct" title="Выполнение сегодня">${todayPct}%</span>
+                </div>
+                <div class="habit-progress-bar">
+                    <div class="habit-progress-fill" style="width:${progress}%;background:${plan.color}"></div>
+                </div>
+                <div class="habit-count">${count} / ${item.goal} сегодня • ${itemPct}% за период</div>
+            </div>
+            <div class="habit-actions">
+                <button class="btn-check${done ? ' checked' : ''}" data-plan="${plan.id}" data-item="${item.id}"
+                    title="${inPeriod ? (done ? 'Отменить шаг' : 'Отметить') : 'Сегодня вне периода'}"
+                    ${inPeriod ? '' : 'disabled'}>${done ? '✓' : '+'}</button>
+                <button class="btn-edit-plan-item" data-plan="${plan.id}" data-item="${item.id}"
+                    title="Редактировать задачу" aria-label="Редактировать задачу">✏️</button>
+                <button class="btn-extract-plan" data-plan="${plan.id}" data-item="${item.id}"
+                    title="Сделать отдельной задачей" aria-label="Сделать отдельной задачей">📤</button>
+            </div>
+        `;
+        return card;
+    }
+
+    function createPlanGroupCard(plan) {
+        const pct = planProgressPct(plan);
+        const pctText = pct === null ? '—' : `${pct}%`;
+        const t = today();
+        const end = planEndDateOf(plan);
+
+        const group = document.createElement('div');
+        group.className = 'plan-group';
+        group.dataset.planId = plan.id;
+        group.style.setProperty('--habit-color', plan.color);
+        group.innerHTML = `
+            <div class="plan-group-head">
+                <div class="plan-group-emoji">${plan.emoji}</div>
+                <div class="plan-group-info">
+                    <div class="plan-group-name-row">
+                        <div class="plan-group-name">${escapeHtml(plan.name)}</div>
+                        <span class="habit-pct" title="Прогресс плана">${pctText}</span>
+                    </div>
+                </div>
+            </div>
+        `;
+
+        const itemsWrap = document.createElement('div');
+        itemsWrap.className = 'plan-group-items';
+        plan.items.forEach(item => {
+            itemsWrap.appendChild(renderPlanItemCard(plan, item, t, end));
+        });
+        group.appendChild(itemsWrap);
+
+        return group;
+    }
+
     function renderHabits() {
         const list = $('#habitsList');
         list.innerHTML = '';
 
-        if (habits.length === 0) {
+        if (habits.length === 0 && plans.length === 0) {
             list.appendChild(createEmptyState());
             calculateStats();
             return;
@@ -416,32 +735,45 @@
 
         const t = today();
 
+        plans.forEach(plan => {
+            list.appendChild(createPlanGroupCard(plan));
+        });
+
         habits.forEach((habit, index) => {
             const count = getHabitCount(habit, t);
             const done = count >= habit.goal;
             const progress = Math.min((count / habit.goal) * 100, 100);
+            const todayPct = Math.round(progress);
             const end = endDateOf(habit);
-            const inPeriod = t >= habit.startDate && t <= end;
-            const finished = t > end;
+            const noPeriod = isPeriodless(habit);
+            const inPeriod = noPeriod || (t >= habit.startDate && t <= end);
+            const finished = !noPeriod && t > end;
             const remaining = Math.max(diffDays(t, end) + 1, 0);
+            const doneDays = countDaysDone(habit);
+            const overallPct = noPeriod ? null : Math.round(Math.min((doneDays / habit.periodDays) * 100, 100));
 
             let status;
-            if (finished) {
-                status = `Период завершён — выполнено ${countDaysDone(habit)} из ${habit.periodDays} ${pld(habit.periodDays)}`;
+            if (noPeriod) {
+                status = `${count} / ${habit.goal} сегодня • выполнено всего: ${habit.lifetimeCount || 0}`;
+            } else if (finished) {
+                status = `Выполнено ${doneDays} из ${habit.periodDays} ${pld(habit.periodDays)} • ${overallPct}% за период`;
             } else {
-                status = `${count} / ${habit.goal} сегодня • осталось ${remaining} ${pld(remaining)}`;
-                if (done) status += ' — выполнено!';
+                status = `${count} / ${habit.goal} сегодня • ${overallPct}% за период`;
             }
 
             const card = document.createElement('div');
             card.className = `habit-card${done ? ' completed' : ''}${finished ? ' finished' : ''}`;
             card.style.setProperty('--habit-color', habit.color);
             card.style.animationDelay = `${index * 0.05}s`;
+            card.dataset.id = habit.id;
 
             card.innerHTML = `
                 <div class="habit-emoji">${habit.emoji}</div>
                 <div class="habit-info">
-                    <div class="habit-name">${escapeHtml(habit.name)}</div>
+                    <div class="habit-name-row">
+                        <div class="habit-name">${escapeHtml(habit.name)}</div>
+                        <span class="habit-pct" title="Выполнение сегодня">${todayPct}%</span>
+                    </div>
                     <div class="habit-progress-bar">
                         <div class="habit-progress-fill" style="width:${progress}%;background:${habit.color}"></div>
                     </div>
@@ -452,6 +784,7 @@
                         title="${inPeriod ? (done ? 'Отменить шаг' : 'Отметить') : 'Сегодня вне периода'}"
                         aria-label="${inPeriod ? (done ? 'Отменить шаг' : 'Отметить') : 'Сегодня вне периода'}"
                         ${inPeriod ? '' : 'disabled'}>${done ? '✓' : '+'}</button>
+                    ${plans.length > 0 ? `<button class="btn-move-to-plan" data-id="${habit.id}" title="Перенести в план" aria-label="Перенести в план">📋</button>` : ''}
                     <button class="btn-edit" data-id="${habit.id}" title="Редактировать" aria-label="Редактировать">✏️</button>
                     <button class="btn-delete" data-id="${habit.id}" title="Удалить" aria-label="Удалить">🗑</button>
                 </div>
@@ -461,11 +794,30 @@
         });
 
         list.querySelectorAll('.btn-check').forEach(btn => {
-            btn.addEventListener('click', () => toggleHabit(btn.dataset.id));
+            btn.addEventListener('click', () => {
+                if (btn.dataset.plan) {
+                    const plan = plans.find(p => p.id === btn.dataset.plan);
+                    if (plan) togglePlanItem(plan, btn.dataset.item);
+                } else {
+                    toggleHabit(btn.dataset.id);
+                }
+            });
         });
 
         list.querySelectorAll('.btn-edit').forEach(btn => {
             btn.addEventListener('click', () => openModal(btn.dataset.id));
+        });
+
+        list.querySelectorAll('.btn-move-to-plan').forEach(btn => {
+            btn.addEventListener('click', () => openMoveToPlanDialog(btn.dataset.id));
+        });
+
+        list.querySelectorAll('.btn-extract-plan').forEach(btn => {
+            btn.addEventListener('click', () => movePlanItemToHabit(btn.dataset.plan, btn.dataset.item));
+        });
+
+        list.querySelectorAll('.btn-edit-plan-item').forEach(btn => {
+            btn.addEventListener('click', () => openItemModal(btn.dataset.plan, btn.dataset.item));
         });
 
         list.querySelectorAll('.btn-delete').forEach(btn => {
@@ -487,7 +839,7 @@
         if (!habit.completions) habit.completions = {};
         const current = habit.completions[dateStr] || 0;
         habit.completions[dateStr] = current >= habit.goal
-            ? Math.max(habit.goal - 1, 0)
+            ? 0
             : current + 1;
 
         if (tg && tg.HapticFeedback) {
@@ -504,9 +856,34 @@
         if (!habit) return;
 
         const t = today();
+
+        if (isPeriodless(habit)) {
+            const wasDone = getHabitCount(habit, t) >= habit.goal;
+            toggleHabitOnDate(habit, t);
+            const nowDone = getHabitCount(habit, t) >= habit.goal;
+            logCompletion(habit, habit, t, wasDone, nowDone);
+
+            if (!wasDone && nowDone) {
+                habit.lifetimeCount = (habit.lifetimeCount || 0) + 1;
+                Object.keys(habit.completions).forEach(d => {
+                    if (d !== t) delete habit.completions[d];
+                });
+            } else if (wasDone && !nowDone) {
+                habit.lifetimeCount = Math.max((habit.lifetimeCount || 0) - 1, 0);
+            }
+
+            save();
+            renderHabits();
+            renderPlan();
+            return;
+        }
+
         if (t < habit.startDate || t > endDateOf(habit)) return;
 
+        const wasDone = getHabitCount(habit, t) >= habit.goal;
         toggleHabitOnDate(habit, t);
+        const nowDone = getHabitCount(habit, t) >= habit.goal;
+        logCompletion(habit, habit, t, wasDone, nowDone);
         save();
         renderHabits();
         renderPlan();
@@ -515,7 +892,11 @@
     function isAnyOverlayOpen() {
         return $('#modalOverlay').classList.contains('active') ||
             $('#confirmOverlay').classList.contains('active') ||
-            $('#periodInputOverlay').classList.contains('active');
+            $('#periodInputOverlay').classList.contains('active') ||
+            $('#planModalOverlay').classList.contains('active') ||
+            $('#itemModalOverlay').classList.contains('active') ||
+            $('#historyOverlay').classList.contains('active') ||
+            (!$('#moveOverlay').hidden && $('#moveOverlay').classList.contains('active'));
     }
     function updateBackButton() {
         if (!tg || !tg.BackButton) return;
@@ -550,11 +931,166 @@
         if (resolver) resolver(value);
     }
 
+    function openMoveToPlanDialog(habitId) {
+        if (movingHabitId) return;
+        if (plans.length === 0) {
+            showToast('Сначала создайте план');
+            return;
+        }
+
+        const habit = habits.find(h => h.id === habitId);
+        if (!habit) return;
+
+        movingHabitId = habitId;
+        moveOverlayScrollY = window.scrollY;
+
+        const overlay = $('#moveOverlay');
+        overlay.hidden = false;
+        document.body.classList.add('move-mode');
+
+        $$('#habitsList .plan-group').forEach(group => {
+            group.classList.add('can-select');
+            group.addEventListener('click', onMovePlanPress);
+        });
+
+        updateBackButton();
+        requestAnimationFrame(() => {
+            requestAnimationFrame(() => overlay.classList.add('active'));
+        });
+
+        const firstPlan = $('#habitsList .plan-group');
+        if (firstPlan) {
+            setTimeout(() => {
+                if (movingHabitId) firstPlan.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            }, 80);
+        }
+    }
+
+    function closeMoveToPlanDialog() {
+        const overlay = $('#moveOverlay');
+        overlay.classList.remove('active');
+        document.body.classList.remove('move-mode');
+
+        $$('#habitsList .plan-group').forEach(group => {
+            group.classList.remove('can-select', 'chosen');
+            group.removeEventListener('click', onMovePlanPress);
+        });
+
+        movingHabitId = null;
+        if (moveOverlayScrollY !== null) {
+            window.scrollTo(0, moveOverlayScrollY);
+            moveOverlayScrollY = null;
+        }
+        updateBackButton();
+        setTimeout(() => {
+            if (overlay.classList.contains('active')) return;
+            overlay.hidden = true;
+        }, 380);
+    }
+
+    function onMovePlanPress(e) {
+        e.stopPropagation();
+        const group = e.currentTarget;
+        const planId = group.dataset.planId;
+        if (!planId || !movingHabitId) return;
+
+        const habitId = movingHabitId;
+        group.classList.add('chosen');
+
+        let alreadyMoving = false;
+        function runMove() {
+            if (alreadyMoving) return;
+            alreadyMoving = true;
+            moveHabitToPlan(habitId, planId);
+            closeMoveToPlanDialog();
+        }
+
+        $$('#habitsList .habit-card[data-id="' + habitId + '"]').forEach(card => {
+            card.classList.add('leaving');
+            card.style.pointerEvents = 'none';
+        });
+
+        setTimeout(runMove, 420);
+    }
+
+    function moveHabitToPlan(habitId, planId) {
+        const habit = habits.find(h => h.id === habitId);
+        const plan = plans.find(p => p.id === planId);
+        
+        if (!habit || !plan) return;
+
+        // Добавляем задачу в план
+        const newItem = {
+            id: generateId(),
+            emoji: habit.emoji,
+            name: habit.name,
+            goal: habit.goal,
+            periodDays: habit.periodDays || DEFAULT_PERIOD,
+            completions: {}
+        };
+        
+        plan.items.push(newItem);
+        
+        // Удаляем задачу из обычных задач
+        habits = habits.filter(h => h.id !== habitId);
+        
+        // Сохраняем
+        save();
+        savePlans();
+        
+        // Обновляем UI
+        renderHabits();
+        renderPlan();
+        const group = $(`#habitsList .plan-group[data-plan-id="${planId}"]`);
+        if (group) {
+            group.classList.add('just-chosen');
+            setTimeout(() => group.classList.remove('just-chosen'), 950);
+        }
+        showToast(`Задача перенесена в план «${plan.name}»`);
+    }
+
+    function movePlanItemToHabit(planId, itemId) {
+        const plan = plans.find(p => p.id === planId);
+        if (!plan) return;
+        const item = plan.items.find(i => i.id === itemId);
+        if (!item) return;
+
+        const newHabit = {
+            id: generateId(),
+            name: item.name,
+            emoji: item.emoji,
+            goal: item.goal,
+            color: plan.color,
+            periodDays: item.periodDays || DEFAULT_PERIOD,
+            startDate: plan.startDate,
+            completions: {},
+            createdAt: today()
+        };
+
+        Object.keys(plan.completions || {}).forEach(d => {
+            const c = plan.completions[d][itemId];
+            if (c) newHabit.completions[d] = c;
+        });
+
+        habits.push(newHabit);
+
+        plan.items = plan.items.filter(i => i.id !== itemId);
+        Object.keys(plan.completions || {}).forEach(d => {
+            delete plan.completions[d][itemId];
+            if (Object.keys(plan.completions[d]).length === 0) delete plan.completions[d];
+        });
+
+        save();
+        savePlans();
+        refreshAll();
+        showToast(`Задача «${item.name}» вынесена из плана`);
+    }
+
     async function deleteHabit(id) {
         const habit = habits.find(h => h.id === id);
         if (!habit) return;
 
-        const ok = await showConfirm(`Удалить задачу «${habit.name}»? Вся история по ней будет удалена.`);
+        const ok = await showConfirm(`Удалить задачу «${habit.name}»?`);
         if (!ok) return;
 
         habits = habits.filter(h => h.id !== id);
@@ -574,12 +1110,15 @@
             periodDays,
             startDate: today(),
             completions: {},
+            lifetimeCount: 0,
             createdAt: today()
         });
         save();
         renderHabits();
         renderPlan();
-        showToast(`Задача добавлена — период ${periodDays} ${pld(periodDays)}`);
+        showToast(periodDays === null
+            ? 'Задача добавлена — без периода'
+            : `Задача добавлена — период ${formatPeriodFromDate(periodDays, today())}`);
     }
 
     function updateHabit(id, name, emoji, goal, color, periodDays) {
@@ -596,13 +1135,483 @@
         showToast('Изменения сохранены');
     }
 
+    // ===================== Планы =====================
+    function loadPlans() {
+        try {
+            const raw = localStorage.getItem(PLANS_KEY);
+            plans = raw ? JSON.parse(raw) : [];
+        } catch {
+            plans = [];
+        }
+
+        plans = plans.filter(p =>
+            p && typeof p === 'object' &&
+            typeof p.id === 'string' &&
+            typeof p.name === 'string' &&
+            p.name.trim() !== ''
+        );
+
+        plans.forEach(p => {
+            p.periodDays = Math.min(Math.max(parseInt(p.periodDays, 10) || DEFAULT_PERIOD, 1), 365);
+            if (!Array.isArray(p.items)) p.items = [];
+            p.items.forEach(it => {
+                it.goal = Math.min(Math.max(parseInt(it.goal, 10) || 1, 1), 100);
+                it.periodDays = Math.min(Math.max(parseInt(it.periodDays, 10) || DEFAULT_PERIOD, 1), 365);
+                if (!it.emoji) it.emoji = '📝';
+                if (!it.id) it.id = generateId();
+            });
+            if (typeof p.completions !== 'object' || p.completions === null || Array.isArray(p.completions)) {
+                p.completions = {};
+            }
+            if (!p.emoji) p.emoji = '📅';
+            if (!p.color) p.color = '#6c5ce7';
+            if (!p.startDate) p.startDate = p.createdAt || today();
+        });
+    }
+
+    function savePlans() {
+        localStorage.setItem(PLANS_KEY, JSON.stringify(plans));
+    }
+
+    function planEndDateOf(plan) {
+        return addDays(plan.startDate, plan.periodDays - 1);
+    }
+
+    function getPlanItemCount(plan, itemId, date) {
+        if (!plan.completions[date]) return 0;
+        return plan.completions[date][itemId] || 0;
+    }
+
+    function isPlanItemDone(plan, item, date) {
+        return getPlanItemCount(plan, item.id, date) >= item.goal;
+    }
+
+    // Универсальный доступ к выполнению: для плана (container=plan, item=item),
+    // для задачи (container=habit, item=habit)
+    function getCompletionCount(container, item, date) {
+        if (Array.isArray(container.items)) {
+            return getPlanItemCount(container, item.id, date);
+        }
+        return getHabitCount(container, date);
+    }
+
+    function isItemDayDone(container, item, date) {
+        return getCompletionCount(container, item, date) >= item.goal;
+    }
+
+    // Полностью выполненные дни задачи плана (для «Всего выполнено»).
+    function planItemDoneDays(plan, item) {
+        const period = Math.min(Math.max(parseInt(item.periodDays, 10) || DEFAULT_PERIOD, 1), 365);
+        let done = 0;
+        for (let i = 0; i < period; i++) {
+            const d = addDays(plan.startDate, i);
+            if (isPlanItemDone(plan, item, d)) done++;
+        }
+        return done;
+    }
+
+    // Прогресс отдельной задачи плана: выполненные дни / её собственный период.
+    // Например, задача на 30 дней с 6 выполненными днями → 6/30 = 20%.
+    // Период ПЛАНА на этот расчёт не влияет.
+    function planItemProgressFrac(plan, item) {
+        const period = Math.min(Math.max(parseInt(item.periodDays, 10) || DEFAULT_PERIOD, 1), 365);
+        return planItemDoneDays(plan, item) / period;
+    }
+
+    // Общий прогресс плана: среднее из прогрессов его задач (1/365 + 1/30 → один общий %).
+    function planProgressPct(plan) {
+        if (!plan.items || plan.items.length === 0) return null;
+        const sum = plan.items.reduce((acc, it) => acc + planItemProgressFrac(plan, it), 0);
+        return Math.round((sum / plan.items.length) * 100);
+    }
+
+    function togglePlanItemOnDate(plan, itemId, dateStr) {
+        const item = plan.items.find(i => i.id === itemId);
+        if (!item) return;
+        if (!plan.completions[dateStr]) plan.completions[dateStr] = {};
+        const cur = plan.completions[dateStr][itemId] || 0;
+        plan.completions[dateStr][itemId] = cur >= item.goal ? 0 : cur + 1;
+    }
+
+    function togglePlanItem(plan, itemId) {
+        const t = today();
+        if (t < plan.startDate || t > planEndDateOf(plan)) return;
+        const item = plan.items.find(i => i.id === itemId);
+        if (!item) return;
+        const wasDone = isPlanItemDone(plan, item, t);
+        togglePlanItemOnDate(plan, itemId, t);
+        const nowDone = isPlanItemDone(plan, item, t);
+        logCompletion(plan, item, t, wasDone, nowDone);
+        savePlans();
+        refreshAll();
+        if (tg && tg.HapticFeedback) {
+            try { tg.HapticFeedback.impactOccurred('light'); } catch { /* без haptic */ }
+        }
+    }
+
+    function createPlansEmptyState() {
+        const div = document.createElement('div');
+        div.className = 'empty-state';
+        div.innerHTML = `
+            <button type="button" class="empty-icon" title="Создать план" aria-label="Создать план">🗓️</button>
+            <p>Создайте план — добавьте в него задачи и отмечайте по дням</p>
+        `;
+        div.querySelector('.empty-icon').addEventListener('click', () => openPlanModal());
+        return div;
+    }
+
+    function renderPlanItem(plan, item, t, end) {
+        const done = isPlanItemDone(plan, item, t);
+        const inPeriod = t >= plan.startDate && t <= end;
+        return `
+            <div class="plan-item${done ? ' done' : ''}">
+                <div class="plan-item-emoji">${item.emoji}</div>
+                <div class="plan-item-info">
+                    <div class="plan-item-name">${escapeHtml(item.name)}</div>
+                </div>
+                <div class="plan-item-actions">
+                    <button type="button" class="plan-item-btn plan-item-up" data-plan="${plan.id}" data-item="${item.id}" title="Выше">▲</button>
+                    <button type="button" class="plan-item-btn plan-item-down" data-plan="${plan.id}" data-item="${item.id}" title="Ниже">▼</button>
+                    <button type="button" class="plan-item-btn plan-item-edit" data-plan="${plan.id}" data-item="${item.id}" title="Редактировать задачу">✏️</button>
+                    <button type="button" class="plan-item-btn plan-item-extract" data-plan="${plan.id}" data-item="${item.id}" title="Сделать отдельной задачей">📤</button>
+                    <button type="button" class="plan-item-btn plan-item-remove" data-plan="${plan.id}" data-item="${item.id}" title="Удалить задачу">✕</button>
+                    <button type="button" class="plan-item-check${done ? ' checked' : ''}" data-plan="${plan.id}" data-item="${item.id}"
+                        title="${inPeriod ? (done ? 'Отменить шаг' : 'Отметить') : 'Сегодня вне периода'}"
+                        ${inPeriod ? '' : 'disabled'}>${done ? '✓' : '+'}</button>
+                </div>
+            </div>
+        `;
+    }
+
+    function renderPlans() {
+        const list = $('#plansList');
+        if (!list) return;
+        list.innerHTML = '';
+
+        if (plans.length === 0) {
+            list.appendChild(createPlansEmptyState());
+            return;
+        }
+
+        const t = today();
+
+        plans.forEach(plan => {
+            const end = planEndDateOf(plan);
+            const pct = planProgressPct(plan);
+            const pctText = pct === null ? '—' : `${pct}%`;
+
+            const card = document.createElement('div');
+            card.className = 'plan-card';
+            card.style.setProperty('--habit-color', plan.color);
+            card.innerHTML = `
+                <div class="plan-card-head">
+                    <div class="plan-card-title">
+                        <div class="plan-card-emoji">${plan.emoji}</div>
+                        <div class="plan-card-name">${escapeHtml(plan.name)}</div>
+                        <span class="habit-pct" title="Прогресс плана">${pctText}</span>
+                    </div>
+                    <div class="plan-card-actions">
+                        <button type="button" class="btn-edit plan-card-edit" data-plan="${plan.id}" title="Редактировать план">✏️</button>
+                        <button type="button" class="btn-delete plan-card-delete" data-plan="${plan.id}" title="Удалить план">🗑️</button>
+                    </div>
+                </div>
+                <div class="plan-card-meta">
+                    <span>${formatPeriodFromDate(plan.periodDays, plan.startDate)}</span>
+                </div>
+                <div class="plan-items">
+                    ${plan.items.map(item => renderPlanItem(plan, item, t, end)).join('')}
+                </div>
+                <button type="button" class="plan-add-item" data-add-item="${plan.id}">+ Добавить задачу</button>
+            `;
+            list.appendChild(card);
+        });
+    }
+
+    function setPlanPeriod(value) {
+        value = Math.min(Math.max(parseInt(value, 10) || DEFAULT_PERIOD, 1), 365);
+        const input = $('#planPeriodDaysInput');
+        const hidden = $('#planPeriod');
+        const display = $('#planPeriodValue');
+        const presets = $$('#planPeriodPresets .preset-btn');
+        if (input) input.value = value;
+        if (hidden) hidden.value = value;
+        if (display) display.textContent = formatPeriod(value);
+        if (presets.length) {
+            presets.forEach(btn => {
+                btn.removeAttribute('data-selected');
+                if (parseInt(btn.dataset.days, 10) === value) {
+                    btn.setAttribute('data-selected', 'true');
+                }
+            });
+        }
+    }
+
+    function openPlanModal(planId) {
+        editingPlanId = planId || null;
+        const overlay = $('#planModalOverlay');
+        if (!overlay) return;
+        const title = $('#planModalTitle');
+        const submitBtn = $('#planSubmitBtn');
+
+        if (editingPlanId) {
+            const plan = plans.find(p => p.id === editingPlanId);
+            if (!plan) return;
+            planUserEditedName = true;
+            title.textContent = 'Редактировать план';
+            submitBtn.textContent = 'Сохранить';
+            $('#planName').value = plan.name;
+            $('#planId').value = plan.id;
+
+            const hasPreset = Array.from($$('#planEmojiPicker .p-emoji-btn'))
+                .some(b => emojiKey(b.dataset.emoji) === emojiKey(plan.emoji));
+            $$('#planEmojiPicker .p-emoji-btn').forEach(b => {
+                b.classList.toggle('selected', emojiKey(b.dataset.emoji) === emojiKey(plan.emoji));
+            });
+            $('#planCustomEmoji').value = hasPreset ? '' : plan.emoji;
+
+            $$('#planColorPicker .p-color-btn').forEach(b => {
+                b.classList.toggle('selected', b.dataset.color === plan.color);
+            });
+            setPlanPeriod(plan.periodDays);
+        } else {
+            planUserEditedName = false;
+            title.textContent = 'Новый план';
+            submitBtn.textContent = 'Создать';
+            $('#planForm').reset();
+            $('#planId').value = '';
+            $$('#planEmojiPicker .p-emoji-btn').forEach((b, i) => {
+                b.classList.toggle('selected', i === 0);
+            });
+            $$('#planColorPicker .p-color-btn').forEach((b, i) => {
+                b.classList.toggle('selected', i === 0);
+            });
+            setPlanPeriod(30);
+        }
+
+        $('#planNameError').hidden = true;
+        overlay.classList.add('active');
+        document.body.classList.add('modal-open');
+        updateBackButton();
+        setTimeout(() => $('#planName').focus(), 100);
+    }
+
+    function closePlanModal() {
+        $('#planModalOverlay').classList.remove('active');
+        document.body.classList.remove('modal-open');
+        updateBackButton();
+    }
+
+    function setItemPeriod(value) {
+        value = Math.min(Math.max(parseInt(value, 10) || DEFAULT_PERIOD, 1), 365);
+        const input = $('#itemPeriodDays');
+        const display = $('#itemPeriodValue');
+        const presets = $$('#itemPeriodPresets .preset-btn');
+        if (input) input.value = value;
+        if (display) display.textContent = formatPeriod(value);
+        if (presets.length) {
+            presets.forEach(btn => {
+                btn.removeAttribute('data-selected');
+                if (parseInt(btn.dataset.days, 10) === value) {
+                    btn.setAttribute('data-selected', 'true');
+                }
+            });
+        }
+    }
+
+    function openItemModal(planId, itemId) {
+        itemTargetPlanId = planId || null;
+        const overlay = $('#itemModalOverlay');
+        if (!overlay || !itemTargetPlanId) return;
+        const title = $('#itemModalTitle');
+        const submitBtn = $('#itemSubmitBtn');
+
+        if (itemId) {
+            const plan = plans.find(p => p.id === planId);
+            const item = plan && plan.items.find(i => i.id === itemId);
+            if (!plan || !item) return;
+            editingItemId = itemId;
+            itemUserEditedName = true;
+            title.textContent = 'Редактировать задачу';
+            submitBtn.textContent = 'Сохранить';
+            $('#itemForm').reset();
+            $('#itemPlanId').value = planId;
+            $('#itemName').value = item.name;
+            $('#itemGoal').value = item.goal;
+
+            const hasPreset = Array.from($$('.i-emoji-btn'))
+                .some(b => emojiKey(b.dataset.emoji) === emojiKey(item.emoji));
+            $$('.i-emoji-btn').forEach(b => {
+                b.classList.toggle('selected', emojiKey(b.dataset.emoji) === emojiKey(item.emoji));
+            });
+            $('#itemCustomEmoji').value = hasPreset ? '' : item.emoji;
+            setItemPeriod(item.periodDays);
+        } else {
+            editingItemId = null;
+            itemUserEditedName = false;
+            title.textContent = 'Добавить задачу в план';
+            submitBtn.textContent = 'Добавить';
+            $('#itemForm').reset();
+            $('#itemPlanId').value = itemTargetPlanId;
+            $$('.i-emoji-btn').forEach((b, i) => {
+                b.classList.toggle('selected', i === 0);
+            });
+            $('#itemCustomEmoji').value = '';
+            setItemPeriod(30);
+        }
+        $('#itemNameError').hidden = true;
+        overlay.classList.add('active');
+        document.body.classList.add('modal-open');
+        updateBackButton();
+        setTimeout(() => $('#itemName').focus(), 100);
+    }
+
+    function closeItemModal() {
+        $('#itemModalOverlay').classList.remove('active');
+        document.body.classList.remove('modal-open');
+        updateBackButton();
+    }
+
+    function getSelectedPlanEmoji() {
+        const custom = normalizeEmoji($('#planCustomEmoji').value.trim());
+        if (custom) return custom;
+        return $('#planEmojiPicker .p-emoji-btn.selected')?.dataset.emoji || '📅';
+    }
+
+    function getSelectedItemEmoji() {
+        const custom = normalizeEmoji($('#itemCustomEmoji').value.trim());
+        if (custom) return custom;
+        return $('.i-emoji-btn.selected')?.dataset.emoji || '📚';
+    }
+
+    function applyPlanEmojiName(emoji) {
+        if (planUserEditedName) return;
+        const defaultName = EMOJI_LOOKUP[emojiKey(emoji)];
+        if (defaultName) $('#planName').value = defaultName;
+    }
+
+    function applyItemEmojiName(emoji) {
+        if (itemUserEditedName) return;
+        const defaultName = EMOJI_LOOKUP[emojiKey(emoji)];
+        if (defaultName) $('#itemName').value = defaultName;
+    }
+
+    function createPlan(name, emoji, color, periodDays) {
+        plans.push({
+            id: generateId(),
+            name,
+            emoji,
+            color,
+            periodDays,
+            startDate: today(),
+            items: [],
+            completions: {},
+            createdAt: today()
+        });
+        savePlans();
+        refreshAll();
+        showToast(`План «${name}» создан — период ${formatPeriodFromDate(periodDays, today())}`);
+    }
+
+    function updatePlan(id, name, emoji, color, periodDays) {
+        const plan = plans.find(p => p.id === id);
+        if (!plan) return;
+        plan.name = name;
+        plan.emoji = emoji;
+        plan.color = color;
+        plan.periodDays = periodDays;
+        savePlans();
+        refreshAll();
+        showToast('План сохранён');
+    }
+
+    async function deletePlan(id) {
+        const plan = plans.find(p => p.id === id);
+        if (!plan) return;
+        const ok = await showConfirm(`Удалить план «${plan.name}»? Все задачи внутри будут удалены.`);
+        if (!ok) return;
+        plans = plans.filter(p => p.id !== id);
+        savePlans();
+        refreshAll();
+        showToast('План удалён');
+    }
+
+    function addPlanItem(planId, name, emoji, goal, periodDays) {
+        const plan = plans.find(p => p.id === planId);
+        if (!plan) return;
+        plan.items.push({ id: generateId(), name, emoji, goal, periodDays });
+        savePlans();
+        refreshAll();
+        showToast('Задача добавлена в план');
+    }
+
+    function updatePlanItem(planId, itemId, name, emoji, goal, periodDays) {
+        const plan = plans.find(p => p.id === planId);
+        if (!plan) return;
+        const item = plan.items.find(i => i.id === itemId);
+        if (!item) return;
+        item.name = name;
+        item.emoji = emoji;
+        item.goal = goal;
+        item.periodDays = periodDays;
+        savePlans();
+        refreshAll();
+        showToast('Задача сохранена');
+    }
+
+    function removePlanItem(planId, itemId) {
+        const plan = plans.find(p => p.id === planId);
+        if (!plan) return;
+        plan.items = plan.items.filter(i => i.id !== itemId);
+        Object.keys(plan.completions || {}).forEach(d => {
+            delete plan.completions[d][itemId];
+            if (Object.keys(plan.completions[d]).length === 0) delete plan.completions[d];
+        });
+        savePlans();
+        refreshAll();
+    }
+
+    function movePlanItem(planId, itemId, dir) {
+        const plan = plans.find(p => p.id === planId);
+        if (!plan) return;
+        const idx = plan.items.findIndex(i => i.id === itemId);
+        const newIdx = idx + dir;
+        if (idx < 0 || newIdx < 0 || newIdx >= plan.items.length) return;
+        const item = plan.items.splice(idx, 1)[0];
+        plan.items.splice(newIdx, 0, item);
+        savePlans();
+        refreshAll();
+    }
+
+    function switchTab(tab) {
+        activeTab = tab;
+        const isHabits = tab === 'habits';
+        $('#viewHabits').hidden = !isHabits;
+        $('#viewPlans').hidden = isHabits;
+        $('#statsBar').hidden = !isHabits;
+        $$('.tab').forEach(t => t.classList.toggle('active', t.dataset.tab === tab));
+        $('#addHabitBtn').textContent = isHabits ? '+ Задача' : '+ План';
+        if (isHabits) {
+            renderHabits();
+            renderPlan();
+        } else {
+            renderPlans();
+        }
+    }
+
+    function refreshAll() {
+        renderHabits();
+        renderPlan();
+        renderPlans();
+    }
+
     // Логика периода (вынесена в scope IIFE, чтобы openModal могла её вызывать)
     function setPeriod(value) {
         value = Math.min(Math.max(parseInt(value, 10) || DEFAULT_PERIOD, 1), 365);
         const slider = $('#periodSlider');
-        const presets = $$('.preset-btn');
+        const presets = $$('#periodPresets .preset-btn');
         if (slider) slider.value = value;
         $('#habitPeriod').value = value;
+        $('#periodCustomDaysInline').value = value;
         $('#periodDisplay .period-value').textContent = formatPeriod(value);
         $('#periodDisplay .period-label').textContent = 'изменить';
         if (presets.length) {
@@ -612,6 +1621,22 @@
                     btn.setAttribute('data-selected', 'true');
                 }
             });
+        }
+    }
+
+    function applyNoPeriodState() {
+        const on = !!($('#habitNoPeriod') && $('#habitNoPeriod').checked);
+        const group = $('#periodGroup');
+        if (group) group.classList.toggle('no-period-active', on);
+        if (on) {
+            const value = parseInt($('#habitPeriod').value, 10) || DEFAULT_PERIOD;
+            const slider = $('#periodSlider');
+            if (slider) slider.value = value;
+        }
+        const display = $('#periodDisplay');
+        if (display) {
+            display.querySelector('.period-value').textContent = on ? 'Без периода' : formatPeriod(parseInt($('#habitPeriod').value, 10) || DEFAULT_PERIOD);
+            display.querySelector('.period-label').textContent = on ? 'задача на один день' : 'изменить';
         }
     }
 
@@ -672,8 +1697,10 @@
             $$('.color-btn').forEach(btn => {
                 btn.classList.toggle('selected', btn.dataset.color === habit.color);
             });
-            $('#periodSlider').value = habit.periodDays;
-            setPeriod(habit.periodDays);
+            $('#periodSlider').value = habit.periodDays || DEFAULT_PERIOD;
+            setPeriod(habit.periodDays || DEFAULT_PERIOD);
+            $('#habitNoPeriod').checked = isPeriodless(habit);
+            applyNoPeriodState();
         } else {
             userEditedName = false; // При создании можем менять название при смене иконки
             title.textContent = 'Новая задача';
@@ -688,6 +1715,8 @@
             });
             setPeriod(30);
             applyEmojiName('💧');
+            $('#habitNoPeriod').checked = false;
+            applyNoPeriodState();
         }
 
         $('#nameError').hidden = true;
@@ -704,71 +1733,121 @@
         updateBackButton();
     }
 
+    function buildPlanRow(container, item, t) {
+        const start = container.startDate;
+        const end = endDateOf(container);
+        const color = container.color;
+
+        let doneDays = 0;
+        for (let d = start; d <= end; d = addDays(d, 1)) {
+            if (isItemDayDone(container, item, d)) doneDays++;
+        }
+
+        const row = document.createElement('div');
+        row.className = 'plan-row';
+
+        const label = document.createElement('div');
+        label.className = 'plan-label';
+        label.innerHTML = `
+            <span class="plan-name" title="${escapeHtml(item.name)}">${item.emoji} ${escapeHtml(item.name)}</span>
+            <span class="plan-dates">до ${formatShort(end)}</span>
+        `;
+
+        const cells = document.createElement('div');
+        cells.className = 'plan-cells';
+
+        let i = 0;
+        for (let d = start; d <= end; d = addDays(d, 1)) {
+            const count = getCompletionCount(container, item, d);
+            const cell = document.createElement('button');
+            cell.type = 'button';
+            cell.className = 'plan-cell';
+
+            const ratio = item.goal > 0 ? count / item.goal : 0;
+            if (ratio >= 1) {
+                cell.classList.add('done');
+                cell.style.background = color;
+            } else if (ratio > 0) {
+                cell.classList.add('partial');
+                cell.style.background = color + '55';
+            }
+
+            if (d === t) cell.classList.add('today');
+            else if (d > t) cell.classList.add('future');
+            if (i % 7 === 6) cell.classList.add('week-end');
+
+            cell.textContent = parseInt(d.slice(8, 10), 10);
+            cell.title = `${formatShort(d)} — ${count}/${item.goal}`;
+
+            cell.addEventListener('click', () => {
+                const wasDone = isItemDayDone(container, item, d);
+                if (Array.isArray(container.items)) {
+                    const plan = plans.find(p => p.id === container.id);
+                    if (!plan) return;
+                    togglePlanItemOnDate(plan, item.id, d);
+                    savePlans();
+                } else {
+                    toggleHabitOnDate(container, d);
+                    save();
+                }
+                const nowDone = isItemDayDone(container, item, d);
+                logCompletion(container, item, d, wasDone, nowDone);
+                refreshAll();
+            });
+
+            cells.appendChild(cell);
+            i++;
+        }
+
+        row.appendChild(label);
+        row.appendChild(cells);
+        return row;
+    }
+
     function renderPlan() {
         const plan = $('#plan');
         plan.innerHTML = '';
 
-        if (habits.length === 0) {
-            plan.innerHTML = '<p style="color:var(--text-secondary);font-size:0.85rem;text-align:center;padding:16px;">Добавьте задачи, чтобы увидеть план на период</p>';
+        if (habits.length === 0 && plans.length === 0) {
+            const empty = document.createElement('div');
+            empty.className = 'empty-state plan-empty';
+            empty.innerHTML = `
+                <button type="button" class="empty-icon" title="Создать план" aria-label="Создать план">📅</button>
+                <p>Добавьте задачи, чтобы увидеть план на период</p>
+            `;
+            empty.querySelector('.empty-icon').addEventListener('click', () => openPlanModal());
+            plan.appendChild(empty);
             return;
         }
 
         const t = today();
 
-        habits.forEach(habit => {
-            const start = habit.startDate;
-            const end = endDateOf(habit);
+        plans.forEach(p => {
+            const group = document.createElement('div');
+            group.className = 'plan-grid-group';
+            group.style.setProperty('--habit-color', p.color);
 
-            const row = document.createElement('div');
-            row.className = 'plan-row';
-
-            const label = document.createElement('div');
-            label.className = 'plan-label';
-            label.innerHTML = `
-                <span class="plan-name" title="${escapeHtml(habit.name)}">${habit.emoji} ${escapeHtml(habit.name)}</span>
-                <span class="plan-dates">до ${formatShort(end)} • ${countDaysDone(habit)}/${habit.periodDays} ${pld(habit.periodDays)}</span>
+            const head = document.createElement('div');
+            head.className = 'plan-grid-head';
+            const gridPct = planProgressPct(p);
+            const gridPctText = gridPct === null ? '—' : `${gridPct}%`;
+            head.innerHTML = `
+                <span class="plan-name">${p.emoji} ${escapeHtml(p.name)}</span>
+                <span class="habit-pct" title="Общий прогресс плана">${gridPctText}</span>
+                <span class="plan-dates">до ${formatShort(planEndDateOf(p))}</span>
             `;
+            group.appendChild(head);
 
-            const cells = document.createElement('div');
-            cells.className = 'plan-cells';
+            p.items.forEach(item => {
+                group.appendChild(buildPlanRow(p, item, t));
+            });
 
-            let i = 0;
-            for (let d = start; d <= end; d = addDays(d, 1)) {
-                const count = getHabitCount(habit, d);
-                const cell = document.createElement('button');
-                cell.type = 'button';
-                cell.className = 'plan-cell';
+            plan.appendChild(group);
+        });
 
-                const ratio = habit.goal > 0 ? count / habit.goal : 0;
-                if (ratio >= 1) {
-                    cell.classList.add('done');
-                    cell.style.background = habit.color;
-                } else if (ratio > 0) {
-                    cell.classList.add('partial');
-                    cell.style.background = habit.color + '55';
-                }
-
-                if (d === t) cell.classList.add('today');
-                else if (d > t) cell.classList.add('future');
-                if (i % 7 === 6) cell.classList.add('week-end');
-
-                cell.textContent = parseInt(d.slice(8, 10), 10);
-                cell.title = `${formatShort(d)} — ${count}/${habit.goal}`;
-
-                cell.addEventListener('click', () => {
-                    toggleHabitOnDate(habit, d);
-                    save();
-                    renderHabits();
-                    renderPlan();
-                });
-
-                cells.appendChild(cell);
-                i++;
-            }
-
-            row.appendChild(label);
-            row.appendChild(cells);
-            plan.appendChild(row);
+        habits.forEach(habit => {
+            if (isPeriodless(habit)) return;
+            plan.appendChild(buildPlanRow(habit, habit, t));
         });
     }
 
@@ -794,13 +1873,21 @@
 
         initTheme();
         load();
+        loadLifetime();
+        loadPlans();
+        loadStats();
+        loadHistory();
+        purgeDonePeriodlessHabits();
 
         $('#currentDate').textContent = formatDate(new Date());
 
         renderHabits();
         renderPlan();
 
-        $('#addHabitBtn').addEventListener('click', () => openModal());
+        $('#addHabitBtn').addEventListener('click', () => {
+            if (activeTab === 'plans') openPlanModal();
+            else openModal();
+        });
         $('#modalClose').addEventListener('click', closeModal);
         $('#modalOverlay').addEventListener('click', (e) => {
             if (e.target === e.currentTarget) closeModal();
@@ -834,12 +1921,229 @@
             });
         });
 
+        // ==== Табы ====
+        $$('.tab').forEach(tab => {
+            tab.addEventListener('click', () => switchTab(tab.dataset.tab));
+        });
+
+        // ==== Список планов (делегирование) ====
+        $('#plansList').addEventListener('click', (e) => {
+            const addItemBtn = e.target.closest('.plan-add-item');
+            if (addItemBtn) {
+                openItemModal(addItemBtn.dataset.addItem);
+                return;
+            }
+            const checkBtn = e.target.closest('.plan-item-check');
+            if (checkBtn) {
+                togglePlanItem(plans.find(p => p.id === checkBtn.dataset.plan), checkBtn.dataset.item);
+                return;
+            }
+            const upBtn = e.target.closest('.plan-item-up');
+            if (upBtn) {
+                movePlanItem(upBtn.dataset.plan, upBtn.dataset.item, -1);
+                return;
+            }
+            const downBtn = e.target.closest('.plan-item-down');
+            if (downBtn) {
+                movePlanItem(downBtn.dataset.plan, downBtn.dataset.item, 1);
+                return;
+            }
+            const removeBtn = e.target.closest('.plan-item-remove');
+            if (removeBtn) {
+                removePlanItem(removeBtn.dataset.plan, removeBtn.dataset.item);
+                return;
+            }
+            const extractBtn = e.target.closest('.plan-item-extract');
+            if (extractBtn) {
+                movePlanItemToHabit(extractBtn.dataset.plan, extractBtn.dataset.item);
+                return;
+            }
+            const editItemBtn = e.target.closest('.plan-item-edit');
+            if (editItemBtn) {
+                openItemModal(editItemBtn.dataset.plan, editItemBtn.dataset.item);
+                return;
+            }
+            const editBtn = e.target.closest('.plan-card-edit');
+            if (editBtn) {
+                openPlanModal(editBtn.dataset.plan);
+                return;
+            }
+            const delBtn = e.target.closest('.plan-card-delete');
+            if (delBtn) {
+                deletePlan(delBtn.dataset.plan);
+                return;
+            }
+        });
+
+        // ==== Модалка плана ====
+        $('#addPlanBtn').addEventListener('click', () => openPlanModal());
+        $('#planModalClose').addEventListener('click', closePlanModal);
+        $('#planModalOverlay').addEventListener('click', (e) => {
+            if (e.target === e.currentTarget) closePlanModal();
+        });
+
+        $$('#planEmojiPicker .p-emoji-btn').forEach(btn => {
+            btn.addEventListener('click', () => {
+                $$('#planEmojiPicker .p-emoji-btn').forEach(b => b.classList.remove('selected'));
+                btn.classList.add('selected');
+                $('#planCustomEmoji').value = '';
+                applyPlanEmojiName(btn.dataset.emoji);
+            });
+        });
+
+        $('#planCustomEmoji').addEventListener('input', () => {
+            const input = $('#planCustomEmoji');
+            input.value = normalizeEmoji(input.value);
+            const emoji = input.value.trim();
+            if (emoji) {
+                $$('#planEmojiPicker .p-emoji-btn').forEach(b => {
+                    b.classList.toggle('selected', emojiKey(b.dataset.emoji) === emojiKey(emoji));
+                });
+                applyPlanEmojiName(emoji);
+            }
+        });
+
+        $$('#planColorPicker .p-color-btn').forEach(btn => {
+            btn.addEventListener('click', () => {
+                $$('#planColorPicker .p-color-btn').forEach(b => b.classList.remove('selected'));
+                btn.classList.add('selected');
+            });
+        });
+
+        $('#planPeriodDisplay').addEventListener('click', () => {
+            $('#planPeriodDaysInput').focus();
+            $('#planPeriodDaysInput').select();
+        });
+        $('#planPeriodDaysInput').addEventListener('input', () => {
+            const v = parseInt($('#planPeriodDaysInput').value, 10);
+            if (v && v >= 1 && v <= 365) setPlanPeriod(v);
+        });
+        $$('#planPeriodPresets .preset-btn').forEach(btn => {
+            btn.addEventListener('click', (e) => {
+                e.preventDefault();
+                setPlanPeriod(btn.dataset.days);
+            });
+        });
+        $('#planName').addEventListener('input', () => {
+            if ($('#planName').value.trim()) planUserEditedName = true;
+            $('#planNameError').hidden = true;
+        });
+        $('#planForm').addEventListener('submit', (e) => {
+            e.preventDefault();
+            const name = $('#planName').value.trim();
+            if (!name) {
+                $('#planNameError').hidden = false;
+                $('#planName').focus();
+                return;
+            }
+            const emoji = getSelectedPlanEmoji();
+            const color = $('#planColorPicker .p-color-btn.selected')?.dataset.color || '#6c5ce7';
+            const periodDays = Math.min(Math.max(
+                parseInt($('#planPeriod').value, 10) || DEFAULT_PERIOD, 1, 365
+            ), 365);
+            if (editingPlanId) {
+                updatePlan(editingPlanId, name, emoji, color, periodDays);
+            } else {
+                createPlan(name, emoji, color, periodDays);
+            }
+            closePlanModal();
+        });
+
+        // ==== Модалка задачи в плане ====
+        $('#itemModalClose').addEventListener('click', closeItemModal);
+        $('#itemModalOverlay').addEventListener('click', (e) => {
+            if (e.target === e.currentTarget) closeItemModal();
+        });
+        $$('.i-emoji-btn').forEach(btn => {
+            btn.addEventListener('click', () => {
+                $$('.i-emoji-btn').forEach(b => b.classList.remove('selected'));
+                btn.classList.add('selected');
+                $('#itemCustomEmoji').value = '';
+                applyItemEmojiName(btn.dataset.emoji);
+            });
+        });
+        $('#itemCustomEmoji').addEventListener('input', () => {
+            const input = $('#itemCustomEmoji');
+            input.value = normalizeEmoji(input.value);
+            const emoji = input.value.trim();
+            if (emoji) {
+                $$('.i-emoji-btn').forEach(b => {
+                    b.classList.toggle('selected', emojiKey(b.dataset.emoji) === emojiKey(emoji));
+                });
+                applyItemEmojiName(emoji);
+            }
+        });
+        $('#itemName').addEventListener('input', () => {
+            if ($('#itemName').value.trim()) itemUserEditedName = true;
+            $('#itemNameError').hidden = true;
+        });
+        $$('#itemPeriodPresets .preset-btn').forEach(btn => {
+            btn.addEventListener('click', (e) => {
+                e.preventDefault();
+                setItemPeriod(btn.dataset.days);
+            });
+        });
+        $('#itemPeriodDays').addEventListener('input', () => {
+            const v = parseInt($('#itemPeriodDays').value, 10);
+            if (v && v >= 1 && v <= 365) setItemPeriod(v);
+        });
+        $('#itemForm').addEventListener('submit', (e) => {
+            e.preventDefault();
+            const name = $('#itemName').value.trim();
+            if (!name) {
+                $('#itemNameError').hidden = false;
+                $('#itemName').focus();
+                return;
+            }
+            const emoji = getSelectedItemEmoji();
+            const goal = Math.min(Math.max(parseInt($('#itemGoal').value, 10) || 1, 1), 100);
+            const periodDays = Math.min(Math.max(
+                parseInt($('#itemPeriodDays').value, 10) || DEFAULT_PERIOD, 1, 365
+            ), 365);
+            if (editingItemId) {
+                updatePlanItem($('#itemPlanId').value, editingItemId, name, emoji, goal, periodDays);
+            } else {
+                addPlanItem($('#itemPlanId').value, name, emoji, goal, periodDays);
+            }
+            closeItemModal();
+        });
+
+        // Оверлей выбора плана: клик мимо плана — отмена
+        $('#moveOverlay').addEventListener('click', (e) => {
+            if (e.target === $('#moveOverlay')) closeMoveToPlanDialog();
+        });
+
+        // Клики по плашкам статистики
+        $('#statTotalCard').addEventListener('click', openHistoryModal);
+        $('#statTodayCard').addEventListener('click', focusTodaySection);
+        $('#statTotalCard').addEventListener('keydown', (e) => {
+            if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); openHistoryModal(); }
+        });
+        $('#statTodayCard').addEventListener('keydown', (e) => {
+            if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); focusTodaySection(); }
+        });
+
+        // Модалка истории
+        $('#historyClose').addEventListener('click', closeHistoryModal);
+        $('#historyOverlay').addEventListener('click', (e) => {
+            if (e.target === e.currentTarget) closeHistoryModal();
+        });
+
+        // Dev-only: полный сброс данных
+        $('#devClearBtn').addEventListener('click', async () => {
+            const ok = await showConfirm('Dev: полностью очистить все данные? Задачи, планы, история и счётчики будут удалены.');
+            if (!ok) return;
+            localStorage.clear();
+            location.reload();
+        });
+
         // Обработчики периода (логика вынесена в scope IIFE — setPeriod и т.д.)
         const periodSlider = $('#periodSlider');
-        const periodPresets = $$('.preset-btn');
+        const periodPresets = $$('#periodPresets .preset-btn');
         const periodOverlay = $('#periodInputOverlay');
         const periodCustomField = $('#periodCustomDays');
         const periodCustomResult = $('#periodCustomResult');
+        const periodCustomFieldInline = $('#periodCustomDaysInline');
 
         periodSlider.addEventListener('input', (e) => {
             setPeriod(nearestStep(e.target.value));
@@ -861,6 +2165,13 @@
         });
 
         periodCustomField.addEventListener('input', updatePeriodCustomResult);
+        // Обработчик для inline поля кастомного периода (как в планах)
+        periodCustomFieldInline.addEventListener('input', () => {
+            const v = parseInt(periodCustomFieldInline.value, 10);
+            if (v && v >= 1 && v <= 365) setPeriod(v);
+        });
+
+        $('#habitNoPeriod').addEventListener('change', applyNoPeriodState);
 
         $('#periodCustomOk').addEventListener('click', () => {
             const v = parseInt(periodCustomField.value, 10);
@@ -894,9 +2205,9 @@
             const emoji = getSelectedEmoji();
             const color = $('.color-btn.selected')?.dataset.color || '#6c5ce7';
             const goal = Math.min(Math.max(parseInt($('#habitGoal').value, 10) || 1, 1), 100);
-            const periodDays = Math.min(Math.max(
-                parseInt($('#habitPeriod').value, 10) || DEFAULT_PERIOD, 1, 365
-            ), 365);
+            const periodDays = $('#habitNoPeriod').checked
+                ? null
+                : Math.min(Math.max(parseInt($('#habitPeriod').value, 10) || DEFAULT_PERIOD, 1, 365), 365);
 
             if (!name) {
                 $('#nameError').hidden = false;
@@ -921,8 +2232,24 @@
                 resolveConfirm(false);
                 return;
             }
+            if (!$('#moveOverlay').hidden) {
+                closeMoveToPlanDialog();
+                return;
+            }
             if ($('#periodInputOverlay').classList.contains('active')) {
                 closePeriodInput();
+                return;
+            }
+            if ($('#planModalOverlay').classList.contains('active')) {
+                closePlanModal();
+                return;
+            }
+            if ($('#itemModalOverlay').classList.contains('active')) {
+                closeItemModal();
+                return;
+            }
+            if ($('#historyOverlay').classList.contains('active')) {
+                closeHistoryModal();
                 return;
             }
             if ($('#modalOverlay').classList.contains('active')) {
