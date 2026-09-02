@@ -2129,13 +2129,22 @@
             if (e.target === e.currentTarget) closeHistoryModal();
         });
 
-        // Dev-only: полный сброс данных
-        $('#devClearBtn').addEventListener('click', async () => {
-            const ok = await showConfirm('Dev: полностью очистить все данные? Задачи, планы, история и счётчики будут удалены.');
-            if (!ok) return;
-            localStorage.clear();
-            location.reload();
-        });
+        // Dev-only: DEV-кнопка видна только на дев-билде (habit-tracker-dev / ?dev)
+        const devBtn = $('#devClearBtn');
+        if (devBtn) {
+            const isDevBuild = location.hostname.indexOf('habit-tracker-dev') !== -1 || /[?&]dev(?:=1)?(&|$)/.test(location.search);
+            if (isDevBuild) {
+                devBtn.hidden = false;
+                devBtn.addEventListener('click', async () => {
+                    const ok = await showConfirm('Dev: полностью очистить все данные? Задачи, планы, история и счётчики будут удалены.');
+                    if (!ok) return;
+                    localStorage.clear();
+                    location.reload();
+                });
+            } else {
+                devBtn.remove();
+            }
+        }
 
         // Обработчики периода (логика вынесена в scope IIFE — setPeriod и т.д.)
         const periodSlider = $('#periodSlider');
