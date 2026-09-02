@@ -83,7 +83,9 @@ $tg = $root.Replace('<meta name="viewport" content="width=device-width, initial-
 
 1. Правки → root files.
 2. Копия в android assets + telegram (см. выше, telegram/index.html — спец-сборка).
-3. Деплой Telegram: `wrangler pages deploy telegram --project-name habit-tracker --branch main` (занимает ~2 с).
+3. Деплой Telegram — DEV: `wrangler pages deploy telegram --project-name habit-tracker-dev --branch main` (занимает ~2 с).
+3а. Деплой Telegram — ПРОД: `wrangler pages deploy telegram --project-name habit-tracker --branch main` (занимает ~2 с). Prod ТОЛЬКО после команды пользователя «прод/деплой прод».
+   DEV: https://habit-tracker-dev-63d.pages.dev/ — ПРОД: https://habit-tracker-de1.pages.dev/. Git-ветки: `dev` / `master`.
 4. APK — ТОЛЬКО по явной просьбе пользователя: `cd android; $env:JAVA_HOME='C:\Program Files\Android\Android Studio\jbr'; .\gradlew.bat assembleRelease`, далее `Copy-Item app\build\outputs\apk\release\app-release.apk -> C:\Users\user\Downloads\HabitTracker.apk`.
 5. Node-проверка: `node --check js\app.js`.
 
