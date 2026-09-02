@@ -2129,10 +2129,10 @@
             if (e.target === e.currentTarget) closeHistoryModal();
         });
 
-        // Dev-only: DEV-кнопка видна только на дев-билде (habit-tracker-dev / ?dev)
+        // Dev-only: DEV-кнопка видна только на дев-билде (veyo-tracker-dev / ?dev)
         const devBtn = $('#devClearBtn');
         if (devBtn) {
-            const isDevBuild = location.hostname.indexOf('habit-tracker-dev') !== -1 || /[?&]dev(?:=1)?(&|$)/.test(location.search);
+            const isDevBuild = location.hostname.indexOf('veyo-tracker-dev') !== -1 || /[?&]dev(?:=1)?(&|$)/.test(location.search);
             if (isDevBuild) {
                 devBtn.hidden = false;
                 devBtn.addEventListener('click', async () => {

@@ -1,4 +1,4 @@
-package com.habittracker.app
+package com.veyotracker.app
 
 import android.app.Activity
 import android.app.AlertDialog
