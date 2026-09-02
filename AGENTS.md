@@ -106,11 +106,32 @@ $tg = $root.Replace('<meta name="viewport" content="width=device-width, initial-
 
 ## Git / GitHub
 
-- Основной репо: https://github.com/soranocode/habit-tracker (приватный), ветка `master`, remote `origin`.
+- Основной репо: https://github.com/soranocode/habit-tracker (приватный), remote `origin`.
 - Доп. репо (копия проекта): https://github.com/soranocode/habits_telegram (приватный), remote `tg` (создан 31.08 gh CLI).
-- НЕЗАКОММИЧЕНО (на 31.08 вечер): весь текущий рефактор (период, слайдер, эмодзи, задачи). Перед работой — проверить `git status`, при необходимости закоммитить запушенное.
 - GitHub CLI установлен и авторизован (доступен через `$env:Path = [System.Environment]::GetEnvironmentVariable('Path','Machine') + ';' + [System.Environment]::GetEnvironmentVariable('Path','User')` в сессии PowerShell).
 - `.gitignore` исключает сборки, local.properties, .idea, APK.
+
+### Модель веток (настроено 02.09)
+
+- `master` — стабильная ветка: актуальный рабочий код, тянет за собой только релизы. Деплой ПРОД из master (wrangler pages deploy с branch master).
+- `dev` — линия разработки: сюда вливается вся обычная работа. Деплой DEV из dev (wrangler pages deploy ... --branch main — фактически dev).
+- Фичи и патчи — отдельные ветки от актуальной `dev`: `feat/*` (новая функциональность), `fix/*` (исправления). Вливаются обратно в `dev` через merge (коммит-сообщение в стиле проекта, пуш ветки удаляется).
+- Релиз (см. также «Релизный процесс» ниже): слияние `dev` → `master` (сначала проверить `git diff dev..master`), затем тег `vX.Y.Z` на master.
+
+### Теги версий
+
+- Формат: `v<major>.<minor>.<patch>` (напр. `v1.0.0`). Аннотированный тег: `git tag -a v1.0.0 -m "..."`.
+- Тег ставится в момент релиза (сборка APK/деплой ПРОД) на `master` — точка архивации состояния.
+- Текущий последний тег: `v1.0.0` (первый стабильный релиз, 02.09).
+- Пуш тегов: `git push origin master && git push origin v1.0.0` (v1.0.1/... по образцу).
+
+### Релизный процесс (чек-лист)
+
+1. Разработка: ветка `feat/*` или `fix/*` от `dev` → merge в `dev`.
+2. Проверки: `node --check js\app.js`, тест в DEV-деплое (habit-tracker-dev): `wrangler pages deploy telegram --project-name habit-tracker-dev --branch main`.
+3. Смержить dev в master: на dev → `git checkout master && git merge --ff-only dev` (если не FF — сначала merge-коммит или rebase dev на master).
+4. `git tag -a v<новый номер> -m "<описание>"` на master, `git push origin master && git push origin v<тег>`.
+5. ПРОД-деплой: `wrangler pages deploy telegram --project-name habit-tracker --branch main` — ТОЛЬКО после команды пользователя «прод/деплой прод».
 
 ## Окружение машины
 
