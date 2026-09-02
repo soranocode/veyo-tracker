@@ -1,11 +1,11 @@
 # AGENTS.md — контекст проекта Task Tracker
 
 Прочитай этот файл целиком перед работой над проектом. Он содержит всё, что сделано и как устроен проект.
-Обновлено: 31 августа 2026 г.
+Обновлено: 2 сентября 2026 г.
 
 ## Что это за проект
 
-Приложение «Habit Tracker» (бренд) — трекер задач с планированием вперёд. ВАЖНО: в UI используется слово «ЗАДАЧА», не «привычка» — пользователь просил, чтобы везде был термин «задача»:
+Приложение «Veyo Tracker» (бренд, ребрендинг 02.09) — трекер задач с планированием вперёд. ВАЖНО: в UI используется слово «ЗАДАЧА», не «привычка» — пользователь просил, чтобы везде был термин «задача»:
 - задача создаётся на выбранный период (от 1 дня до 1 года);
 - вместо истории показывается «План на период» — лента дней от начала периода до конца, клик по дню отмечает выполнение;
 - статистика: серия дней, выполнено сегодня, всего выполнено, прогресс периода.
@@ -22,7 +22,7 @@ habit-tracker/
 │   ├── css/style.css   # КОПИЯ корневого
 │   └── js/app.js       # КОПИЯ корневого
 └── android/            # проект Android Studio (WebView-обёртка)
-    ├── app/src/main/java/com/habittracker/app/MainActivity.kt
+    ├── app/src/main/java/com/veyotracker/app/MainActivity.kt
     ├── app/src/main/assets/          # КОПИЯ веб-файлов (index.html, css/, js/)
     └── app/src/main/res/             # темы, строки, иконка
 ```
@@ -83,15 +83,15 @@ $tg = $root.Replace('<meta name="viewport" content="width=device-width, initial-
 
 1. Правки → root files.
 2. Копия в android assets + telegram (см. выше, telegram/index.html — спец-сборка).
-3. Деплой Telegram — DEV: `wrangler pages deploy telegram --project-name habit-tracker-dev --branch main` (занимает ~2 с).
-3а. Деплой Telegram — ПРОД: `wrangler pages deploy telegram --project-name habit-tracker --branch main` (занимает ~2 с). Prod ТОЛЬКО после команды пользователя «прод/деплой прод».
-   DEV: https://habit-tracker-dev-63d.pages.dev/ — ПРОД: https://habit-tracker-de1.pages.dev/. Git-ветки: `dev` / `master`.
-4. APK — ТОЛЬКО по явной просьбе пользователя: `cd android; $env:JAVA_HOME='C:\Program Files\Android\Android Studio\jbr'; .\gradlew.bat assembleRelease`, далее `Copy-Item app\build\outputs\apk\release\app-release.apk -> C:\Users\user\Downloads\HabitTracker.apk`.
+3. Деплой Telegram — DEV: `wrangler pages deploy telegram --project-name veyo-tracker-dev --branch main` (занимает ~2 с).
+3а. Деплой Telegram — ПРОД: `wrangler pages deploy telegram --project-name veyo-tracker --branch main` (занимает ~2 с). Prod ТОЛЬКО после команды пользователя «прод/деплой прод».
+   DEV: https://veyo-tracker-dev.pages.dev/ — ПРОД: https://veyo-tracker.pages.dev/ (ещё НЕ задеплоен). Git-ветки: `dev` / `master`. Старые CF-проекты habit-tracker/habit-tracker-dev остались на месте (не удалять без спроса).
+4. APK — ТОЛЬКО по явной просьбе пользователя: `cd android; $env:JAVA_HOME='C:\Program Files\Android\Android Studio\jbr'; .\gradlew.bat assembleRelease`, далее `Copy-Item app\build\outputs\apk\release\app-release.apk -> C:\Users\user\Downloads\VeyoTracker.apk`.
 5. Node-проверка: `node --check js\app.js`.
 
 ## Telegram Mini App (telegram/)
 
-- Развёрнуто на Cloudflare Pages (проект `habit-tracker`): https://habit-tracker-de1.pages.dev/ (обновление — команда из п.3).
+- Развёрнуто на Cloudflare Pages (проект `veyo-tracker`): https://veyo-tracker.pages.dev/ (обновление — команда из п.3).
 - wrangler установлен глобально, авторизация сохранена в `C:\Users\user\.wrangler\config\default.toml` (важна копия и в `AppData\Roaming\xdg.config\.wrangler\config\default.toml` — было несоответствие путей, из-за чего wrangler писал «Not logged in»).
 - Бот: @BotFather → /newapp или /setmenubutton → URL.
 - ВАЖНО: сеть ПК пользователя фильтрует TLS по SNI для *.pages.dev (DNS подменяется на приватный IP 172.22.x.x) — с этого ПК сайт НЕ открывается, это нормально. Проверять с телефона (или через webfetch, но он тоже может отдавать Transport error — не путать с реальной ошибкой деплоя).
@@ -101,13 +101,12 @@ $tg = $root.Replace('<meta name="viewport" content="width=device-width, initial-
 - Kotlin, minSdk 26, targetSdk 35, AGP 8.7.3, Gradle 8.9 (wrapper), Kotlin 2.0.21, Java 17 (JBR из Android Studio).
 - Без внешних зависимостей.
 - Кнопка «Назад» закрывает модалки (диспатч Escape в JS: modalOverlay, confirmOverlay, periodInputOverlay — проверить функцию в MainActivity).
-- Release-сборка подписана debug-ключом. Готовый APK лежит в `C:\Users\user\Downloads\HabitTracker.apk`.
+- Release-сборка подписана debug-ключом. Готовый APK лежит в `C:\Users\user\Downloads\VeyoTracker.apk`.
 - Пользователь поставил правило: APK собирать ТОЛЬКО по явной просьбе.
 
 ## Git / GitHub
 
-- Основной репо: https://github.com/soranocode/habit-tracker (приватный), remote `origin`.
-- Доп. репо (копия проекта): https://github.com/soranocode/habits_telegram (приватный), remote `tg` (создан 31.08 gh CLI).
+- Основной репо: https://github.com/soranocode/veyo-tracker (приватный, переименован 02.09 из habit-tracker), remote `origin`.
 - GitHub CLI установлен и авторизован (доступен через `$env:Path = [System.Environment]::GetEnvironmentVariable('Path','Machine') + ';' + [System.Environment]::GetEnvironmentVariable('Path','User')` в сессии PowerShell).
 - `.gitignore` исключает сборки, local.properties, .idea, APK.
 
@@ -128,10 +127,10 @@ $tg = $root.Replace('<meta name="viewport" content="width=device-width, initial-
 ### Релизный процесс (чек-лист)
 
 1. Разработка: ветка `feat/*` или `fix/*` от `dev` → merge в `dev`.
-2. Проверки: `node --check js\app.js`, тест в DEV-деплое (habit-tracker-dev): `wrangler pages deploy telegram --project-name habit-tracker-dev --branch main`.
+2. Проверки: `node --check js\app.js`, тест в DEV-деплое (veyo-tracker-dev): `wrangler pages deploy telegram --project-name veyo-tracker-dev --branch main`.
 3. Смержить dev в master: на dev → `git checkout master && git merge --ff-only dev` (если не FF — сначала merge-коммит или rebase dev на master).
 4. `git tag -a v<новый номер> -m "<описание>"` на master, `git push origin master && git push origin v<тег>`.
-5. ПРОД-деплой: `wrangler pages deploy telegram --project-name habit-tracker --branch main` — ТОЛЬКО после команды пользователя «прод/деплой прод».
+5. ПРОД-деплой: `wrangler pages deploy telegram --project-name veyo-tracker --branch main` — ТОЛЬКО после команды пользователя «прод/деплой прод».
 
 ## Окружение машины
 
