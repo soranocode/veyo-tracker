@@ -1,0 +1,16 @@
+# Worker veyo-reminders: доставка напоминаний Veyo Tracker
+# - POST /api/sync  — мини-апп шлёт снапшот задач с напоминаниями (пишем в KV user:<id>)
+# - POST /webhook   — Telegram Bot API webhook (копит chat_id, см. chat:<tg_user_id>)
+# - scheduled cron  — раз в минуту: сверяем время в tz пользователя и шлём напоминания
+# Secrets: BOT_TOKEN (wrangler secret put BOT_TOKEN)
+
+name = "veyo-reminders"
+main = "src/index.js"
+compatibility_date = "2024-09-23"
+
+[[kv_namespaces]]
+binding = "VEYO_KV"
+id = "fe5149d08148451190642c7dd75eee6c"
+
+[triggers]
+crons = ["* * * * *"]

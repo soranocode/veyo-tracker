@@ -17,3 +17,10 @@ Desktop.ini
 # Editor
 *.swp
 .vscode/
+
+# Telegram bot
+bot/node_modules/
+bot/.env
+
+# Cloudflare wrangler local state
+.wrangler/

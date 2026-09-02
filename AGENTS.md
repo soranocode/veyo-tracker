@@ -153,3 +153,11 @@ $tg = $root.Replace('<meta name="viewport" content="width=device-width, initial-
 - `node --check` запускать из корня проекта.
 - Эмулятор: AVD `Test_API_31` есть, но НЕ запускать без просьбы (у пользователя был конфликт «more than one device»).
 - Телефон подключается по adb как `lfaaxk8tkf5t8hzt` — иногда не подключён.
+
+## Telegram-бот и напоминания (ЗОНА БОТ-АГЕНТА, с 02.09.2026)
+
+- Каталог `bot/` закреплён за бот-агентом (OpenClaw). Кодеру фронта НЕ редактировать `bot/` без команды пользователя. Подробности и статус: `bot/README.md`.
+- Архитектура напоминаний: Mini App (dev: veyo-tracker-dev.pages.dev) шлёт задачи с `reminderTime` в Cloudflare Worker `veyo-reminders` (POST /api/sync → KV `VEYO_KV`) → cron раз в минуту шлёт через Telegram Bot API `sendMessage` на chat_id (webhook копит `chat:<user_id>`).
+- Локальный long polling-бот на grammY (`bot/index.js`) — LEGACY, остановлен. Бот живёт в Worker через webhook.
+- Веб-патч синхронизации (`syncRemindersToBackend()` в корневом `js/app.js`, вызывается из `save()` и `init()`) — часть эпика напоминаний; синк копий — по процедуре выше.
+- Telegram-бот `@veyo_tracker_bot` в режиме «только плашка»: Menu Button ведёт на мини-апп, на сообщения бот молчит.

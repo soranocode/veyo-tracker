@@ -1,0 +1,13 @@
+{
+  "name": "veyo-tracker-bot",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Telegram bot for Veyo Tracker mini app",
+  "main": "index.js",
+  "scripts": {
+    "start": "node --env-file=.env index.js"
+  },
+  "dependencies": {
+    "grammy": "^1.30.0"
+  }
+}
