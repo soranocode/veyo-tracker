@@ -191,6 +191,8 @@
     let habits = [];
     let plans = [];
     let editingId = null;
+    let reminderTimeCurrent = null;
+    let reminderTimeDraft = '09:00';
     let editingPlanId = null;
     let editingItemId = null;
     let itemTargetPlanId = null;
@@ -276,7 +278,7 @@
             }
             if (typeof h.lifetimeCount !== 'number' || h.lifetimeCount < 0) h.lifetimeCount = 0;
             if (!h.emoji) h.emoji = '💧';
-            if (!h.color) h.color = '#6c5ce7';
+            if (!h.color) h.color = '#22a2f0';
             if (!h.startDate) h.startDate = h.createdAt || today();
         });
     }
@@ -355,7 +357,7 @@
 
         if (tg && tg.setHeaderColor) {
             try {
-                tg.setHeaderColor(dark ? '#1a1a2e' : '#f0f2f5');
+                tg.setHeaderColor(dark ? '#13233d' : '#e9f6fe');
             } catch {
                 /* нет поддержки setHeaderColor */
             }
@@ -760,6 +762,7 @@
             } else {
                 status = `${count} / ${habit.goal} сегодня • ${overallPct}% за период`;
             }
+            if (habit.reminderTime) status += ` • 🔔 ${habit.reminderTime}`;
 
             const card = document.createElement('div');
             card.className = `habit-card${done ? ' completed' : ''}${finished ? ' finished' : ''}`;
@@ -893,6 +896,7 @@
         return $('#modalOverlay').classList.contains('active') ||
             $('#confirmOverlay').classList.contains('active') ||
             $('#periodInputOverlay').classList.contains('active') ||
+            $('#timeInputOverlay').classList.contains('active') ||
             $('#planModalOverlay').classList.contains('active') ||
             $('#itemModalOverlay').classList.contains('active') ||
             $('#historyOverlay').classList.contains('active') ||
@@ -1062,6 +1066,7 @@
             goal: item.goal,
             color: plan.color,
             periodDays: item.periodDays || DEFAULT_PERIOD,
+            reminderTime: null,
             startDate: plan.startDate,
             completions: {},
             createdAt: today()
@@ -1100,7 +1105,7 @@
         showToast('Задача удалена');
     }
 
-    function addHabit(name, emoji, goal, color, periodDays) {
+    function addHabit(name, emoji, goal, color, periodDays, reminderTime) {
         habits.push({
             id: generateId(),
             name,
@@ -1108,6 +1113,7 @@
             goal,
             color,
             periodDays,
+            reminderTime: reminderTime || null,
             startDate: today(),
             completions: {},
             lifetimeCount: 0,
@@ -1121,7 +1127,7 @@
             : `Задача добавлена — период ${formatPeriodFromDate(periodDays, today())}`);
     }
 
-    function updateHabit(id, name, emoji, goal, color, periodDays) {
+    function updateHabit(id, name, emoji, goal, color, periodDays, reminderTime) {
         const habit = habits.find(h => h.id === id);
         if (!habit) return;
         habit.name = name;
@@ -1129,6 +1135,7 @@
         habit.goal = goal;
         habit.color = color;
         habit.periodDays = periodDays;
+        habit.reminderTime = reminderTime || null;
         save();
         renderHabits();
         renderPlan();
@@ -1164,7 +1171,7 @@
                 p.completions = {};
             }
             if (!p.emoji) p.emoji = '📅';
-            if (!p.color) p.color = '#6c5ce7';
+            if (!p.color) p.color = '#22a2f0';
             if (!p.startDate) p.startDate = p.createdAt || today();
         });
     }
@@ -1640,8 +1647,115 @@
         }
     }
 
-    function openPeriodInput() {
-        const field = $('#periodCustomDays');
+    function updateReminderDisplay() {
+        const value = $('#reminderValue');
+        const label = $('#reminderLabel');
+        if (!value || !label) return;
+        if (reminderTimeCurrent) {
+            value.textContent = reminderTimeCurrent;
+            label.textContent = 'изменить';
+        } else {
+            value.textContent = 'Не напоминать';
+            label.textContent = 'выбрать время';
+        }
+    }
+
+    function parseTimeStr(str) {
+        const m = /^([01]?\d|2[0-3]):([0-5]\d)$/.exec((str || '').trim());
+        if (!m) return null;
+        return { h: parseInt(m[1], 10), m: parseInt(m[2], 10) };
+    }
+
+    function pad2(n) { return String(n).padStart(2, '0'); }
+
+    function ensureWheelBuilt() {
+        const hours = $('#wheelHours');
+        const minutes = $('#wheelMinutes');
+        if (!hours || !minutes) return;
+        if (hours.childElementCount > 0) return;
+
+        hours.innerHTML = '';
+        minutes.innerHTML = '';
+        for (let h = 0; h < 24; h++) {
+            const item = document.createElement('div');
+            item.className = 'wheel-item';
+            item.dataset.value = h;
+            item.textContent = pad2(h);
+            hours.appendChild(item);
+        }
+        for (let m = 0; m < 60; m++) {
+            const item = document.createElement('div');
+            item.className = 'wheel-item';
+            item.dataset.value = m;
+            item.textContent = pad2(m);
+            minutes.appendChild(item);
+        }
+    }
+
+    function wheelScrollTo(col, index) {
+        const itemH = 44;
+        col.scrollTop = index * itemH;
+    }
+
+    function syncWheelToDraft() {
+        const t = parseTimeStr(reminderTimeDraft) || { h: 9, m: 0 };
+        const hours = $('#wheelHours');
+        const minutes = $('#wheelMinutes');
+        if (hours) wheelScrollTo(hours, t.h);
+        if (minutes) wheelScrollTo(minutes, t.m);
+        markWheelSelection();
+    }
+
+    function markWheelSelection() {
+        const t = parseTimeStr(reminderTimeDraft) || { h: 9, m: 0 };
+        [['#wheelHours', t.h], ['#wheelMinutes', t.m]].forEach(([sel, val]) => {
+            const col = $(sel);
+            if (!col) return;
+            Array.from(col.children).forEach(item => {
+                item.classList.toggle('selected', parseInt(item.dataset.value, 10) === val);
+            });
+        });
+    }
+
+    function syncDraftFromWheel(col) {
+        const itemH = 44;
+        const index = Math.max(0, Math.min(Math.round(col.scrollTop / itemH), col.childElementCount - 1));
+        const val = parseInt(col.children[index]?.dataset.value, 10);
+        if (isNaN(val)) return;
+        const t = parseTimeStr(reminderTimeDraft) || { h: 9, m: 0 };
+        reminderTimeDraft = col.id === 'wheelHours'
+            ? `${pad2(val)}:${pad2(t.m)}`
+            : `${pad2(t.h)}:${pad2(val)}`;
+        markWheelSelection();
+        $('#timeManual').value = reminderTimeDraft;
+        $('#timeError').hidden = true;
+    }
+
+    function openTimePicker() {
+        const overlay = $('#timeInputOverlay');
+        if (!overlay) return;
+        reminderTimeDraft = reminderTimeCurrent || '09:00';
+        ensureWheelBuilt();
+        const manual = $('#timeManual');
+        manual.value = reminderTimeDraft;
+        $('#timeError').hidden = true;
+        $$('#timePresets .time-preset').forEach(btn => {
+            btn.classList.toggle('selected', btn.dataset.time === reminderTimeDraft);
+        });
+        syncWheelToDraft();
+        overlay.classList.add('active');
+        document.body.classList.add('modal-open');
+        updateBackButton();
+        setTimeout(() => manual.focus(), 100);
+    }
+
+    function closeTimePicker() {
+        $('#timeInputOverlay').classList.remove('active');
+        document.body.classList.remove('modal-open');
+        updateBackButton();
+    }
+
+    function openPeriodInput() {        const field = $('#periodCustomDays');
         const overlay = $('#periodInputOverlay');
         if (!field || !overlay) return;
         field.value = $('#habitPeriod').value;
@@ -1701,6 +1815,7 @@
             setPeriod(habit.periodDays || DEFAULT_PERIOD);
             $('#habitNoPeriod').checked = isPeriodless(habit);
             applyNoPeriodState();
+            reminderTimeCurrent = habit.reminderTime || null;
         } else {
             userEditedName = false; // При создании можем менять название при смене иконки
             title.textContent = 'Новая задача';
@@ -1717,8 +1832,10 @@
             applyEmojiName('💧');
             $('#habitNoPeriod').checked = false;
             applyNoPeriodState();
+            reminderTimeCurrent = null;
         }
 
+        updateReminderDisplay();
         $('#nameError').hidden = true;
         modal.classList.add('active');
         document.body.classList.add('modal-open');
@@ -2037,7 +2154,7 @@
                 return;
             }
             const emoji = getSelectedPlanEmoji();
-            const color = $('#planColorPicker .p-color-btn.selected')?.dataset.color || '#6c5ce7';
+            const color = $('#planColorPicker .p-color-btn.selected')?.dataset.color || '#22a2f0';
             const periodDays = Math.min(Math.max(
                 parseInt($('#planPeriod').value, 10) || DEFAULT_PERIOD, 1, 365
             ), 365);
@@ -2182,6 +2299,79 @@
 
         $('#habitNoPeriod').addEventListener('change', applyNoPeriodState);
 
+        // Обработчики напоминания (таймпикер)
+        const reminderDisplay = $('#reminderDisplay');
+        const timeOverlay = $('#timeInputOverlay');
+        const wheelHours = $('#wheelHours');
+        const wheelMinutes = $('#wheelMinutes');
+        const manualTime = $('#timeManual');
+        const timeError = $('#timeError');
+
+        ensureWheelBuilt();
+
+        let wheelTimer = null;
+        function onWheelScroll() {
+            const col = this;
+            clearTimeout(wheelTimer);
+            wheelTimer = setTimeout(() => syncDraftFromWheel(col), 90);
+        }
+        wheelHours?.addEventListener('scroll', onWheelScroll);
+        wheelMinutes?.addEventListener('scroll', onWheelScroll);
+
+        if (reminderDisplay) {
+            reminderDisplay.addEventListener('click', openTimePicker);
+            reminderDisplay.addEventListener('keydown', (e) => {
+                if (e.key === 'Enter' || e.key === ' ') {
+                    e.preventDefault();
+                    openTimePicker();
+                }
+            });
+        }
+
+        $$('#timePresets .time-preset').forEach(btn => {
+            btn.addEventListener('click', () => {
+                reminderTimeDraft = btn.dataset.time;
+                manualTime.value = reminderTimeDraft;
+                timeError.hidden = true;
+                $$('#timePresets .time-preset').forEach(b => b.classList.toggle('selected', b === btn));
+                syncWheelToDraft();
+            });
+        });
+
+        manualTime?.addEventListener('input', () => {
+            const t = parseTimeStr(manualTime.value);
+            if (t) {
+                reminderTimeDraft = `${pad2(t.h)}:${pad2(t.m)}`;
+                timeError.hidden = true;
+                $$('#timePresets .time-preset').forEach(b => b.classList.toggle('selected', b.dataset.time === reminderTimeDraft));
+                syncWheelToDraft();
+            } else {
+                timeError.hidden = manualTime.value.trim() === '';
+            }
+        });
+
+        $('#timeOk')?.addEventListener('click', () => {
+            const t = parseTimeStr(manualTime.value);
+            if (manualTime.value.trim() && !t) {
+                timeError.hidden = false;
+                return;
+            }
+            reminderTimeCurrent = t ? `${pad2(t.h)}:${pad2(t.m)}` : null;
+            closeTimePicker();
+            updateReminderDisplay();
+        });
+
+        $('#timeCancel')?.addEventListener('click', closeTimePicker);
+        $('#timeInputClose')?.addEventListener('click', closeTimePicker);
+        $('#timeClear')?.addEventListener('click', () => {
+            reminderTimeCurrent = null;
+            closeTimePicker();
+            updateReminderDisplay();
+        });
+        timeOverlay?.addEventListener('click', (e) => {
+            if (e.target === e.currentTarget) closeTimePicker();
+        });
+
         $('#periodCustomOk').addEventListener('click', () => {
             const v = parseInt(periodCustomField.value, 10);
             if (!v || v < 1 || v > 365) return;
@@ -2212,7 +2402,7 @@
 
             const name = $('#habitName').value.trim();
             const emoji = getSelectedEmoji();
-            const color = $('.color-btn.selected')?.dataset.color || '#6c5ce7';
+            const color = $('.color-btn.selected')?.dataset.color || '#22a2f0';
             const goal = Math.min(Math.max(parseInt($('#habitGoal').value, 10) || 1, 1), 100);
             const periodDays = $('#habitNoPeriod').checked
                 ? null
@@ -2227,9 +2417,9 @@
             $('#habitGoal').value = goal;
 
             if (editingId) {
-                updateHabit(editingId, name, emoji, goal, color, periodDays);
+                updateHabit(editingId, name, emoji, goal, color, periodDays, reminderTimeCurrent);
             } else {
-                addHabit(name, emoji, goal, color, periodDays);
+                addHabit(name, emoji, goal, color, periodDays, reminderTimeCurrent);
             }
 
             closeModal();
@@ -2247,6 +2437,10 @@
             }
             if ($('#periodInputOverlay').classList.contains('active')) {
                 closePeriodInput();
+                return;
+            }
+            if ($('#timeInputOverlay').classList.contains('active')) {
+                closeTimePicker();
                 return;
             }
             if ($('#planModalOverlay').classList.contains('active')) {

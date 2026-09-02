@@ -1,9 +1,9 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <style name="Theme.VeyoTracker" parent="android:Theme.Material.Light.NoActionBar">
-        <item name="android:statusBarColor">#F0F2F5</item>
-        <item name="android:navigationBarColor">#F0F2F5</item>
+        <item name="android:statusBarColor">#E9F6FE</item>
+        <item name="android:navigationBarColor">#E9F6FE</item>
         <item name="android:windowLightStatusBar">true</item>
-        <item name="android:windowBackground">#F0F2F5</item>
+        <item name="android:windowBackground">#E9F6FE</item>
     </style>
 </resources>

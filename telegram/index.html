@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
     <title>Veyo Tracker — Трекер задач</title>
-    <link rel="stylesheet" href="css/style.css?v=4">
+    <link rel="stylesheet" href="css/style.css?v=5">
     <script src="https://telegram.org/js/telegram-web-app.js"></script>
 </head>
 <body>
@@ -141,13 +141,20 @@
                         </label>
                     </div>
                     <div class="form-group">
+                        <label for="reminderDisplay">Напоминание</label>
+                        <div class="period-display" id="reminderDisplay" role="button" tabindex="0" title="Нажмите, чтобы выбрать время">
+                            <span class="period-value" id="reminderValue">Не напоминать</span>
+                            <span class="period-label" id="reminderLabel">выбрать время</span>
+                        </div>
+                    </div>
+                    <div class="form-group">
                         <label for="habitColor">Цвет</label>
                         <div class="color-picker" id="colorPicker">
-                            <button type="button" class="color-btn selected" data-color="#6c5ce7" style="background:#6c5ce7"></button>
+                            <button type="button" class="color-btn selected" data-color="#22a2f0" style="background:#22a2f0"></button>
                             <button type="button" class="color-btn" data-color="#00b894" style="background:#00b894"></button>
                             <button type="button" class="color-btn" data-color="#fdcb6e" style="background:#fdcb6e"></button>
                             <button type="button" class="color-btn" data-color="#e17055" style="background:#e17055"></button>
-                            <button type="button" class="color-btn" data-color="#0984e3" style="background:#0984e3"></button>
+                            <button type="button" class="color-btn" data-color="#6c5ce7" style="background:#6c5ce7"></button>
                             <button type="button" class="color-btn" data-color="#e84393" style="background:#e84393"></button>
                             <button type="button" class="color-btn" data-color="#d63031" style="background:#d63031"></button>
                             <button type="button" class="color-btn" data-color="#000000" style="background:#000000"></button>
@@ -214,11 +221,11 @@
                     <div class="form-group">
                         <label>Цвет</label>
                         <div class="color-picker" id="planColorPicker">
-                            <button type="button" class="p-color-btn selected" data-color="#6c5ce7" style="background:#6c5ce7"></button>
+                            <button type="button" class="p-color-btn selected" data-color="#22a2f0" style="background:#22a2f0"></button>
                             <button type="button" class="p-color-btn" data-color="#00b894" style="background:#00b894"></button>
                             <button type="button" class="p-color-btn" data-color="#fdcb6e" style="background:#fdcb6e"></button>
                             <button type="button" class="p-color-btn" data-color="#e17055" style="background:#e17055"></button>
-                            <button type="button" class="p-color-btn" data-color="#0984e3" style="background:#0984e3"></button>
+                            <button type="button" class="p-color-btn" data-color="#6c5ce7" style="background:#6c5ce7"></button>
                             <button type="button" class="p-color-btn" data-color="#e84393" style="background:#e84393"></button>
                             <button type="button" class="p-color-btn" data-color="#d63031" style="background:#d63031"></button>
                             <button type="button" class="p-color-btn" data-color="#000000" style="background:#000000"></button>
@@ -324,10 +331,41 @@
                 </div>
             </div>
         </div>
+
+        <div class="modal-overlay" id="timeInputOverlay">
+            <div class="modal">
+                <div class="modal-header">
+                    <h3>Напоминание</h3>
+                    <button class="btn-close" id="timeInputClose" type="button">&times;</button>
+                </div>
+                <div class="time-body">
+                    <div class="time-presets" id="timePresets">
+                        <button type="button" class="preset-btn time-preset" data-time="08:00">Утро</button>
+                        <button type="button" class="preset-btn time-preset" data-time="12:00">День</button>
+                        <button type="button" class="preset-btn time-preset" data-time="19:00">Вечер</button>
+                        <button type="button" class="preset-btn time-preset" data-time="22:00">Ночь</button>
+                    </div>
+                    <div class="time-wheel" id="timeWheel">
+                        <div class="wheel-col" id="wheelHours"></div>
+                        <span class="wheel-colon">:</span>
+                        <div class="wheel-col" id="wheelMinutes"></div>
+                    </div>
+                    <div class="time-manual">
+                        <input type="text" id="timeManual" placeholder="ЧЧ:ММ" inputmode="numeric" maxlength="5" autocomplete="off">
+                        <button type="button" class="btn-cancel" id="timeClear">Не напоминать</button>
+                    </div>
+                    <p class="form-error" id="timeError" hidden>Формат «ЧЧ:ММ», например 09:30</p>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn-cancel" id="timeCancel">Отмена</button>
+                    <button type="button" class="btn-primary" id="timeOk">Готово</button>
+                </div>
+            </div>
+        </div>
     </div>
 
     <button type="button" class="dev-clear-btn" id="devClearBtn" title="Dev: очистить все данные" hidden>DEV ✕</button>
 
-    <script src="js/app.js?v=4"></script>
+    <script src="js/app.js?v=5"></script>
 </body>
 </html>
