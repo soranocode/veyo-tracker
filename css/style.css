@@ -1894,6 +1894,19 @@ body.move-mode .habit-card.leaving {
 }
 
 /* Time picker (reminder) */
+#reminderDisplay {
+    background: var(--surface);
+    border: 1px solid var(--border);
+}
+
+#reminderDisplay .period-value {
+    color: var(--text);
+}
+
+#reminderDisplay .period-label {
+    color: var(--text-secondary);
+}
+
 .time-body {
     padding: 4px 0 8px;
 }
@@ -1907,6 +1920,10 @@ body.move-mode .habit-card.leaving {
 }
 
 .time-preset {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    text-align: center;
     background: var(--surface-hover);
     color: var(--text);
     border: 1px solid var(--border);

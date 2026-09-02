@@ -307,6 +307,54 @@
 
     function save() {
         localStorage.setItem(STORAGE_KEY, JSON.stringify(habits));
+        syncRemindersToBackend();
+    }
+
+    // ---- Синхронизация напоминаний с бэкендом (Cloudflare Worker veyo-reminders) ----
+    // Шлёт снапшот задач с напоминаниями, чтобы Worker-бот мог доставлять push.
+    // Только из Telegram Mini App (нужен user_id), fire-and-forget, дебаунс 10 с.
+    const SYNC_ENDPOINT = 'https://veyo-reminders.okhotinandrei5.workers.dev/api/sync';
+    let lastReminderSyncAt = 0;
+
+    function syncRemindersToBackend() {
+        const u = tg && tg.initDataUnsafe && tg.initDataUnsafe.user;
+        if (!u || !u.id) return;
+
+        const reminders = habits.filter(h => h.reminderTime);
+        if (reminders.length === 0) return;
+
+        const nowMs = Date.now();
+        if (nowMs - lastReminderSyncAt < 10000) return;
+        lastReminderSyncAt = nowMs;
+
+        const t = today();
+        let tz = 'UTC';
+        try { tz = Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC'; } catch { /* остаёмся на UTC */ }
+
+        const payload = {
+            user_id: String(u.id),
+            tz,
+            tasks: reminders.map(h => {
+                const end = endDateOf(h);
+                const started = !h.startDate || t >= h.startDate;
+                const overdue = !!(end && t > end);
+                const doneToday = (h.completions[t] || 0) >= h.goal;
+                return {
+                    id: h.id,
+                    name: h.name,
+                    emoji: h.emoji || '🔔',
+                    reminderTime: h.reminderTime,
+                    active: started && !overdue && !doneToday
+                };
+            })
+        };
+
+        // fire-and-forget: ошибки сети/бэкенда не должны ломать UI
+        fetch(SYNC_ENDPOINT, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload)
+        }).catch(() => { /* бэкенд недоступен — не критично для UI */ });
     }
 
     function pld(n) {
@@ -1655,7 +1703,7 @@
             value.textContent = reminderTimeCurrent;
             label.textContent = 'изменить';
         } else {
-            value.textContent = 'выбрать время';
+            value.textContent = 'Выбрать время';
             label.textContent = '';
         }
     }
@@ -1979,9 +2027,7 @@
                     }
                 });
                 if (tg.BackButton) {
-                    tg.BackButton.onClick(() => {
-                        window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }));
-                    });
+                    tg.BackButton.onClick(() => closeTopLayer());
                 }
             } catch {
                 /* работаем без Telegram API */
@@ -2426,39 +2472,45 @@
         });
 
         document.addEventListener('keydown', (e) => {
-            if (e.key !== 'Escape') return;
-            if ($('#confirmOverlay').classList.contains('active')) {
-                resolveConfirm(false);
-                return;
-            }
-            if (!$('#moveOverlay').hidden) {
-                closeMoveToPlanDialog();
-                return;
-            }
-            if ($('#periodInputOverlay').classList.contains('active')) {
-                closePeriodInput();
-                return;
-            }
-            if ($('#timeInputOverlay').classList.contains('active')) {
-                closeTimePicker();
-                return;
-            }
-            if ($('#planModalOverlay').classList.contains('active')) {
-                closePlanModal();
-                return;
-            }
-            if ($('#itemModalOverlay').classList.contains('active')) {
-                closeItemModal();
-                return;
-            }
-            if ($('#historyOverlay').classList.contains('active')) {
-                closeHistoryModal();
-                return;
-            }
-            if ($('#modalOverlay').classList.contains('active')) {
-                closeModal();
-            }
+            if (e.key === 'Escape') closeTopLayer();
         });
+
+        // Первичная синхронизация напоминаний (если есть задачи с напоминанием)
+        setTimeout(syncRemindersToBackend, 2500);
+    }
+
+    function closeTopLayer() {
+        if ($('#confirmOverlay').classList.contains('active')) {
+            resolveConfirm(false);
+            return;
+        }
+        if (!$('#moveOverlay').hidden) {
+            closeMoveToPlanDialog();
+            return;
+        }
+        if ($('#periodInputOverlay').classList.contains('active')) {
+            closePeriodInput();
+            return;
+        }
+        if ($('#timeInputOverlay').classList.contains('active')) {
+            closeTimePicker();
+            return;
+        }
+        if ($('#planModalOverlay').classList.contains('active')) {
+            closePlanModal();
+            return;
+        }
+        if ($('#itemModalOverlay').classList.contains('active')) {
+            closeItemModal();
+            return;
+        }
+        if ($('#historyOverlay').classList.contains('active')) {
+            closeHistoryModal();
+            return;
+        }
+        if ($('#modalOverlay').classList.contains('active')) {
+            closeModal();
+        }
     }
 
     document.addEventListener('DOMContentLoaded', init);
