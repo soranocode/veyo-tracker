@@ -1942,8 +1942,8 @@ body.move-mode .habit-card.leaving {
     height: 44px;
     transform: translate(-50%, -50%);
     pointer-events: none;
-    z-index: 2;
-    background: var(--surface-hover);
+    z-index: 0;
+    background: var(--primary-light);
     border: 1px solid var(--border);
     border-radius: 10px;
 }

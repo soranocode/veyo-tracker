@@ -1655,8 +1655,8 @@
             value.textContent = reminderTimeCurrent;
             label.textContent = 'изменить';
         } else {
-            value.textContent = 'Не напоминать';
-            label.textContent = 'выбрать время';
+            value.textContent = 'выбрать время';
+            label.textContent = '';
         }
     }
 
