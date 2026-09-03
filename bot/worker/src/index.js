@@ -13,6 +13,7 @@
 //   chat:<tg_user_id>                 -> chat_id
 //   done:<tg_user_id>:<date>:<taskId> -> '1' (выполнено из бота; TTL 7 дней — /api/state отдаёт эти дни)
 //   sent:<tg_user_id>:<date>:<taskId>:<warn|due> -> '1' (защита от дублей; TTL 2 дня)
+//   warnmsg:<tg_user_id>:<taskId> -> message_id предупреждения (удаляем при уведомлении; TTL 3 дня)
 
 const CORS = {
   'Access-Control-Allow-Origin': '*',
@@ -24,6 +25,7 @@ const LEAD_OPTIONS = [0, 15, 30, 60];
 const DEFAULT_LEAD_MIN = 30;
 const DONE_TTL_SEC = 7 * 86400;   // окно, которое отдаёт /api/state
 const SENT_TTL_SEC = 2 * 86400;
+const WARNMSG_TTL_SEC = 3 * 86400; // message_id предупреждения, чтобы удалить его при уведомлении
 
 // ---- цвет задачи -> кружок-эмодзи (в Telegram текст не покрасить) ----
 const CIRCLE_BY_HEX = {
@@ -143,7 +145,13 @@ async function tgApi(env, method, payload) {
 }
 
 async function sendTelegram(env, chatId, text, extra = {}) {
-  await tgApi(env, 'sendMessage', { chat_id: chatId, text, ...extra });
+  const body = await tgApi(env, 'sendMessage', { chat_id: chatId, text, ...extra });
+  try {
+    const parsed = JSON.parse(body);
+    return (parsed.result && parsed.result.message_id) || null;
+  } catch {
+    return null;
+  }
 }
 
 // ---- POST /api/sync ----
@@ -365,8 +373,12 @@ async function deliverForUser(env, key, now) {
         if (!done && leadMin > 0) {
           const warnMin = (taskMin - leadMin + 1440) % 1440;
           if (nowMin === warnMin && !(await alreadySent(env, userId, today, task.id, 'warn'))) {
-            await sendTelegram(env, chatId, taskLine(task, true));
+            const msgId = await sendTelegram(env, chatId, taskLine(task, true));
             await markSent(env, userId, today, task.id, 'warn');
+            // запоминаем сообщение-предупреждение, чтобы удалить его, когда придёт уведомление
+            if (msgId) {
+              await env.VEYO_KV.put(`warnmsg:${userId}:${task.id}`, String(msgId), { expirationTtl: WARNMSG_TTL_SEC });
+            }
           }
         }
 
@@ -378,6 +390,16 @@ async function deliverForUser(env, key, now) {
             : {};
           await sendTelegram(env, chatId, taskLine(task, false), extra);
           await markSent(env, userId, today, task.id, 'due');
+          // уведомление пришло — удаляем раннее предупреждение из чата
+          const warnMsgId = await env.VEYO_KV.get(`warnmsg:${userId}:${task.id}`);
+          if (warnMsgId) {
+            try {
+              await tgApi(env, 'deleteMessage', { chat_id: chatId, message_id: Number(warnMsgId) });
+            } catch (err) {
+              console.error(`delete warn msg fail user=${userId} task=${task.id}:`, String(err));
+            }
+            await env.VEYO_KV.delete(`warnmsg:${userId}:${task.id}`).catch(() => {});
+          }
         }
       }
     } catch (err) {
