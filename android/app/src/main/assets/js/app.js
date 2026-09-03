@@ -6,6 +6,7 @@
     const PLANS_KEY = 'habit-tracker-plans';
     const LIFETIME_KEY = 'habit-tracker-lifetime';
     const HISTORY_KEY = 'habit-tracker-history';
+    const SETTINGS_KEY = 'habit-tracker-settings';
 
     const DEFAULT_PERIOD = 30;
 
@@ -207,6 +208,7 @@
     let toastTimer = null;
     let confirmResolver = null;
     let userEditedName = false;
+    let leadMin = 0;
 
     const $ = (sel) => document.querySelector(sel);
     const $$ = (sel) => document.querySelectorAll(sel);
@@ -277,7 +279,7 @@
                 h.completions = {};
             }
             if (typeof h.lifetimeCount !== 'number' || h.lifetimeCount < 0) h.lifetimeCount = 0;
-            if (!h.emoji) h.emoji = '💧';
+            if (h.emoji == null) h.emoji = '';
             if (!h.color) h.color = '#22a2f0';
             if (!h.startDate) h.startDate = h.createdAt || today();
         });
@@ -314,47 +316,81 @@
     // Шлёт снапшот задач с напоминаниями, чтобы Worker-бот мог доставлять push.
     // Только из Telegram Mini App (нужен user_id), fire-and-forget, дебаунс 10 с.
     const SYNC_ENDPOINT = 'https://veyo-reminders.okhotinandrei5.workers.dev/api/sync';
+    const STATE_ENDPOINT = 'https://veyo-reminders.okhotinandrei5.workers.dev/api/state';
     let lastReminderSyncAt = 0;
 
     function syncRemindersToBackend() {
         const u = tg && tg.initDataUnsafe && tg.initDataUnsafe.user;
         if (!u || !u.id) return;
 
-        const reminders = habits.filter(h => h.reminderTime);
-        if (reminders.length === 0) return;
+        const t = today();
+        let tz = 'UTC';
+        try { tz = Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC'; } catch { /* остаёмся на UTC */ }
+
+        const tasks = habits.map(h => {
+            const end = endDateOf(h);
+            const started = !h.startDate || t >= h.startDate;
+            const overdue = !!(end && t > end);
+            const doneToday = (h.completions[t] || 0) >= h.goal;
+            return {
+                id: h.id,
+                name: h.name,
+                emoji: h.emoji || '🔔',
+                color: h.color,
+                goal: h.goal,
+                doneToday,
+                reminderTime: h.reminderTime,
+                active: started && !overdue && !doneToday
+            };
+        });
 
         const nowMs = Date.now();
         if (nowMs - lastReminderSyncAt < 10000) return;
         lastReminderSyncAt = nowMs;
 
-        const t = today();
-        let tz = 'UTC';
-        try { tz = Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC'; } catch { /* остаёмся на UTC */ }
-
         const payload = {
             user_id: String(u.id),
             tz,
-            tasks: reminders.map(h => {
-                const end = endDateOf(h);
-                const started = !h.startDate || t >= h.startDate;
-                const overdue = !!(end && t > end);
-                const doneToday = (h.completions[t] || 0) >= h.goal;
-                return {
-                    id: h.id,
-                    name: h.name,
-                    emoji: h.emoji || '🔔',
-                    reminderTime: h.reminderTime,
-                    active: started && !overdue && !doneToday
-                };
-            })
+            leadMin,
+            tasks
         };
 
-        // fire-and-forget: ошибки сети/бэкенда не должны ломать UI
         fetch(SYNC_ENDPOINT, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(payload)
         }).catch(() => { /* бэкенд недоступен — не критично для UI */ });
+    }
+
+    function fetchState() {
+        const u = tg && tg.initDataUnsafe && tg.initDataUnsafe.user;
+        if (!u || !u.id) return;
+
+        fetch(`${STATE_ENDPOINT}?user_id=${encodeURIComponent(u.id)}`)
+            .then(r => r.ok ? r.json() : null)
+            .then(data => {
+                if (!data || !data.tasks) return;
+                let changed = false;
+                data.tasks.forEach(remote => {
+                    const habit = habits.find(h => h.id === remote.id);
+                    if (!habit) return;
+                    if (remote.doneToday && !isCompletedToday(habit)) {
+                        const t = today();
+                        toggleHabitOnDate(habit, t);
+                        logCompletion(habit, habit, t, false, true);
+                        habit.lifetimeCount = (habit.lifetimeCount || 0) + 1;
+                        changed = true;
+                    }
+                });
+                if (changed) {
+                    save();
+                    saveHistory();
+                    saveStats();
+                    renderHabits();
+                    renderPlan();
+                }
+            })
+            .catch(() => { /* бэкенд недоступен — не критично */ });
     }
 
     function pld(n) {
@@ -536,6 +572,22 @@
         localStorage.setItem(STATS_KEY, JSON.stringify(stats));
     }
 
+    function loadSettings() {
+        try {
+            const raw = localStorage.getItem(SETTINGS_KEY);
+            if (raw) {
+                const s = JSON.parse(raw);
+                leadMin = typeof s.leadMin === 'number' ? s.leadMin : 0;
+            }
+        } catch {
+            leadMin = 0;
+        }
+    }
+
+    function saveSettings() {
+        localStorage.setItem(SETTINGS_KEY, JSON.stringify({ leadMin }));
+    }
+
     // ===================== История выполнений =====================
     function loadHistory() {
         try {
@@ -683,7 +735,7 @@
     function getSelectedEmoji() {
         const custom = normalizeEmoji($('#customEmoji').value.trim());
         if (custom) return custom;
-        return $('.emoji-btn.selected')?.dataset.emoji || '💧';
+        return $('.emoji-btn.selected')?.dataset.emoji || '';
     }
 
     function applyEmojiName(emoji) {
@@ -819,7 +871,7 @@
             card.dataset.id = habit.id;
 
             card.innerHTML = `
-                <div class="habit-emoji">${habit.emoji}</div>
+                <div class="habit-emoji${habit.emoji ? '' : ' no-emoji'}">${habit.emoji || ''}</div>
                 <div class="habit-info">
                     <div class="habit-name-row">
                         <div class="habit-name">${escapeHtml(habit.name)}</div>
@@ -948,6 +1000,7 @@
             $('#planModalOverlay').classList.contains('active') ||
             $('#itemModalOverlay').classList.contains('active') ||
             $('#historyOverlay').classList.contains('active') ||
+            $('#settingsOverlay').classList.contains('active') ||
             (!$('#moveOverlay').hidden && $('#moveOverlay').classList.contains('active'));
     }
     function updateBackButton() {
@@ -1865,19 +1918,19 @@
             applyNoPeriodState();
             reminderTimeCurrent = habit.reminderTime || null;
         } else {
-            userEditedName = false; // При создании можем менять название при смене иконки
+            userEditedName = false;
             title.textContent = 'Новая задача';
             submitBtn.textContent = 'Добавить';
             $('#habitForm').reset();
             $('#habitId').value = '';
-            $$('.emoji-btn').forEach((btn, i) => {
-                btn.classList.toggle('selected', i === 0);
+            $$('.emoji-btn').forEach(btn => {
+                btn.classList.remove('selected');
             });
+            $('#customEmoji').value = '';
             $$('.color-btn').forEach((btn, i) => {
                 btn.classList.toggle('selected', i === 0);
             });
             setPeriod(30);
-            applyEmojiName('💧');
             $('#habitNoPeriod').checked = false;
             applyNoPeriodState();
             reminderTimeCurrent = null;
@@ -2040,6 +2093,7 @@
         loadPlans();
         loadStats();
         loadHistory();
+        loadSettings();
         purgeDonePeriodlessHabits();
 
         $('#currentDate').textContent = formatDate(new Date());
@@ -2057,6 +2111,38 @@
         });
 
         $('#themeToggle').addEventListener('click', toggleTheme);
+
+        function openSettingsModal() {
+            const overlay = $('#settingsOverlay');
+            $$('#leadMinOptions .setting-opt').forEach(btn => {
+                btn.classList.toggle('selected', parseInt(btn.dataset.value, 10) === leadMin);
+            });
+            overlay.classList.add('active');
+            document.body.classList.add('modal-open');
+            updateBackButton();
+        }
+
+        function closeSettingsModal() {
+            $('#settingsOverlay').classList.remove('active');
+            document.body.classList.remove('modal-open');
+            updateBackButton();
+        }
+
+        $('#settingsBtn').addEventListener('click', openSettingsModal);
+        $('#settingsClose').addEventListener('click', closeSettingsModal);
+        $('#settingsOverlay').addEventListener('click', (e) => {
+            if (e.target === e.currentTarget) closeSettingsModal();
+        });
+
+        $$('#leadMinOptions .setting-opt').forEach(btn => {
+            btn.addEventListener('click', () => {
+                $$('#leadMinOptions .setting-opt').forEach(b => b.classList.remove('selected'));
+                btn.classList.add('selected');
+                leadMin = parseInt(btn.dataset.value, 10) || 0;
+                saveSettings();
+                syncRemindersToBackend();
+            });
+        });
 
         $$('.emoji-btn').forEach(btn => {
             btn.addEventListener('click', () => {
@@ -2477,6 +2563,7 @@
 
         // Первичная синхронизация напоминаний (если есть задачи с напоминанием)
         setTimeout(syncRemindersToBackend, 2500);
+        setTimeout(fetchState, 3000);
     }
 
     function closeTopLayer() {
@@ -2506,6 +2593,10 @@
         }
         if ($('#historyOverlay').classList.contains('active')) {
             closeHistoryModal();
+            return;
+        }
+        if ($('#settingsOverlay').classList.contains('active')) {
+            closeSettingsModal();
             return;
         }
         if ($('#modalOverlay').classList.contains('active')) {

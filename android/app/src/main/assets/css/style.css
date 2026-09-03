@@ -309,6 +309,15 @@ body.modal-open {
     line-height: 1;
 }
 
+.habit-emoji.no-emoji {
+    background: var(--habit-color, var(--primary));
+    opacity: 0.7;
+    border-radius: 50%;
+    width: 24px;
+    height: 24px;
+    min-width: 24px;
+}
+
 .habit-info {
     flex: 1;
     min-width: 0;
@@ -2043,4 +2052,62 @@ body.move-mode .habit-card.leaving {
 .btn-danger:focus-visible {
     outline: 2px solid var(--primary);
     outline-offset: 2px;
+}
+
+/* Settings */
+.settings-body {
+    padding: 4px 0;
+}
+
+.settings-section-title {
+    font-size: 0.8rem;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--text-secondary);
+    margin: 0 0 12px;
+}
+
+.setting-item {
+    margin-bottom: 20px;
+}
+
+.setting-item:last-child {
+    margin-bottom: 0;
+}
+
+.setting-label {
+    display: block;
+    font-size: 0.95rem;
+    margin-bottom: 10px;
+}
+
+.setting-options {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+}
+
+.setting-opt {
+    padding: 8px 14px;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    background: var(--surface);
+    color: var(--text);
+    font-size: 0.9rem;
+    cursor: pointer;
+    transition: all 0.15s ease;
+}
+
+.setting-opt:hover {
+    border-color: var(--primary);
+}
+
+.setting-opt.selected {
+    background: var(--primary);
+    color: #fff;
+    border-color: var(--primary);
+}
+
+.btn-settings {
+    font-size: 1.2rem;
 }
