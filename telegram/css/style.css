@@ -1435,12 +1435,14 @@ body.move-mode .habit-card.leaving {
     flex-shrink: 0;
 }
 
-.emoji-btn:hover,
-.p-emoji-btn:hover,
-.i-emoji-btn:hover {
-    border-color: var(--primary);
-    transform: scale(1.12);
-    box-shadow: 0 4px 12px rgba(34, 162, 240, 0.25);
+@media (hover: hover) and (pointer: fine) {
+    .emoji-btn:hover,
+    .p-emoji-btn:hover,
+    .i-emoji-btn:hover {
+        border-color: var(--primary);
+        transform: scale(1.12);
+        box-shadow: 0 4px 12px rgba(34, 162, 240, 0.25);
+    }
 }
 
 .emoji-btn.selected,
