@@ -335,7 +335,7 @@
             return {
                 id: h.id,
                 name: h.name,
-                emoji: h.emoji || '🔔',
+                emoji: h.emoji || '',
                 color: h.color,
                 goal: h.goal,
                 doneToday,
