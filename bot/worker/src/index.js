@@ -1,18 +1,88 @@
 // veyo-reminders — доставка напоминаний Veyo Tracker (Cloudflare Worker)
+// v2 (2026-09-03): два события на задачу:
+//   1) Предупреждение за leadMin минут до времени задачи (текст, без кнопок)
+//   2) Уведомление ровно в время задачи (текст + кнопка «Выполнено»)
+// Формат сообщения: {эмодзи|цветной кружок} {название} — {время задачи}
 // Эндпоинты:
-//   POST /api/sync   — мини-апп: { user_id, tz, tasks: [{id,name,emoji,reminderTime,active}] }
-//   POST /webhook    — Telegram updates (сохраняем chat_id пользователя)
-//   cron (каждую минуту) — отправка напоминаний через Telegram Bot API
+//   POST /api/sync    — мини-апп: { user_id, tz, leadMin, tasks: [{id,name,emoji,color,reminderTime,active,goal,doneToday}] }
+//   GET  /api/state   — мини-апп: ?user_id= -> отметки «выполнено» из бота { done: { <taskId>: ["YYYY-MM-DD", ...] } }
+//   POST /webhook     — Telegram updates: сообщения (копируем chat_id) + callback_query (кнопка «Выполнено»)
+//   cron (каждую минуту) — доставка
 // KV:
-//   user:<tg_user_id>            -> { tz, tasks, updatedAt }
-//   chat:<tg_user_id>            -> chat_id
-//   sent:<tg_user_id>:<date>:<taskId> -> '1' (TTL 24ч, защита от дублей)
+//   user:<tg_user_id>                 -> { tz, leadMin, tasks:[...], updatedAt }
+//   chat:<tg_user_id>                 -> chat_id
+//   done:<tg_user_id>:<date>:<taskId> -> '1' (выполнено из бота; TTL 7 дней — /api/state отдаёт эти дни)
+//   sent:<tg_user_id>:<date>:<taskId>:<warn|due> -> '1' (защита от дублей; TTL 2 дня)
 
 const CORS = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Methods': 'POST, GET, OPTIONS',
   'Access-Control-Allow-Headers': 'Content-Type',
 };
+
+const LEAD_OPTIONS = [0, 15, 30, 60];
+const DEFAULT_LEAD_MIN = 30;
+const DONE_TTL_SEC = 7 * 86400;   // окно, которое отдаёт /api/state
+const SENT_TTL_SEC = 2 * 86400;
+
+// ---- цвет задачи -> кружок-эмодзи (в Telegram текст не покрасить) ----
+const CIRCLE_BY_HEX = {
+  '#22a2f0': '🔵', // синий (дефолт приложения)
+  '#00b894': '🟢', // зелёный
+  '#fdcb6e': '🟡', // жёлтый
+  '#e17055': '🟠', // оранжевый
+  '#6c5ce7': '🟣', // фиолетовый
+  '#d63031': '🔴', // красный
+  '#e84393': '🔴', // розовый (розового круга нет — ближайший красный)
+  '#000000': '⚫',
+};
+
+const FALLBACK_CIRCLES = [
+  ['⚫', [0, 0, 0]],
+  ['⚪', [255, 255, 255]],
+  ['🔴', [229, 57, 53]],
+  ['🟠', [225, 112, 85]],
+  ['🟡', [253, 203, 110]],
+  ['🟢', [0, 184, 148]],
+  ['🔵', [34, 162, 240]],
+  ['🟣', [108, 92, 231]],
+  ['🟤', [141, 110, 99]],
+];
+
+function hexToRgb(hex) {
+  const m = /^#?([0-9a-f]{6})$/i.exec(String(hex || '').trim());
+  if (!m) return null;
+  const n = parseInt(m[1], 16);
+  return [(n >> 16) & 255, (n >> 8) & 255, n & 255];
+}
+
+function circleForColor(color) {
+  const key = String(color || '').toLowerCase();
+  if (CIRCLE_BY_HEX[key]) return CIRCLE_BY_HEX[key];
+  const rgb = hexToRgb(key);
+  if (!rgb) return '🔵';
+  let best = FALLBACK_CIRCLES[0][0];
+  let bestD = Infinity;
+  for (const [emoji, ref] of FALLBACK_CIRCLES) {
+    const d = (rgb[0] - ref[0]) ** 2 + (rgb[1] - ref[1]) ** 2 + (rgb[2] - ref[2]) ** 2;
+    if (d < bestD) { bestD = d; best = emoji; }
+  }
+  return best;
+}
+
+// иконка задачи: эмодзи, если выбран; иначе цветной кружок
+function taskIcon(task) {
+  const emoji = task && task.emoji ? String(task.emoji).trim() : '';
+  if (emoji && emoji !== '??') return emoji;
+  return circleForColor(task && task.color);
+}
+
+function taskLine(task, withPrefix) {
+  const time = task.reminderTime || '';
+  const icon = taskIcon(task);
+  const body = `${icon} ${task.name}${time ? ' — ' + time : ''}`;
+  return withPrefix ? `Напоминание: ${body}` : body;
+}
 
 function json(data, status = 200, extraHeaders = {}) {
   return new Response(JSON.stringify(data), {
@@ -21,23 +91,20 @@ function json(data, status = 200, extraHeaders = {}) {
   });
 }
 
-// Время HH:MM в таймзоне пользователя
+// ---- время/дата в таймзоне пользователя ----
+function normHhmm(s) {
+  return String(s).replace(/^24:/, '00:'); // Intl может вернуть 24:xx вместо 00:xx
+}
+
 function timeInTz(tz, date = new Date()) {
   try {
-    return new Intl.DateTimeFormat('en-GB', {
-      timeZone: tz,
-      hour: '2-digit',
-      minute: '2-digit',
-      hour12: false,
-    }).format(date);
+    return normHhmm(new Intl.DateTimeFormat('en-GB', {
+      timeZone: tz, hour: '2-digit', minute: '2-digit', hour12: false,
+    }).format(date));
   } catch {
-    // невалидная tz -> UTC
-    return new Intl.DateTimeFormat('en-GB', {
-      timeZone: 'UTC',
-      hour: '2-digit',
-      minute: '2-digit',
-      hour12: false,
-    }).format(date);
+    return normHhmm(new Intl.DateTimeFormat('en-GB', {
+      timeZone: 'UTC', hour: '2-digit', minute: '2-digit', hour12: false,
+    }).format(date));
   }
 }
 
@@ -49,6 +116,36 @@ function dateInTz(tz, date = new Date()) {
   }
 }
 
+function parseHhmm(s) {
+  const m = /^(\d{1,2}):(\d{2})$/.exec(String(s || '').trim());
+  if (!m) return null;
+  const h = parseInt(m[1], 10) % 24;
+  const min = parseInt(m[2], 10);
+  if (min > 59) return null;
+  return h * 60 + min;
+}
+
+function minToHhmm(min) {
+  const m = ((min % 1440) + 1440) % 1440;
+  return `${String(Math.floor(m / 60)).padStart(2, '0')}:${String(m % 60).padStart(2, '0')}`;
+}
+
+// ---- Telegram API ----
+async function tgApi(env, method, payload) {
+  const resp = await fetch(`https://api.telegram.org/bot${env.BOT_TOKEN}/${method}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  });
+  const body = await resp.text();
+  if (!resp.ok) throw new Error(`${method} ${resp.status}: ${body.slice(0, 300)}`);
+  return body;
+}
+
+async function sendTelegram(env, chatId, text, extra = {}) {
+  await tgApi(env, 'sendMessage', { chat_id: chatId, text, ...extra });
+}
+
 // ---- POST /api/sync ----
 async function handleSync(request, env) {
   try {
@@ -56,11 +153,29 @@ async function handleSync(request, env) {
     const userId = body && body.user_id;
     if (!userId) return json({ ok: false, error: 'missing user_id' }, 400);
 
+    let leadMin = parseInt(body.leadMin, 10);
+    if (!LEAD_OPTIONS.includes(leadMin)) leadMin = DEFAULT_LEAD_MIN;
+
+    const syncDate = dateInTz((typeof body.tz === 'string' && body.tz) || 'UTC');
+    const tasks = Array.isArray(body.tasks) ? body.tasks.map((t) => ({
+      id: String(t.id || ''),
+      name: String(t.name || ''),
+      emoji: t.emoji != null ? String(t.emoji) : '',
+      color: t.color != null ? String(t.color) : '#22a2f0',
+      reminderTime: t.reminderTime ? String(t.reminderTime) : null,
+      active: !!t.active,
+      goal: Math.min(Math.max(parseInt(t.goal, 10) || 1, 1), 100),
+      // doneToday валиден только на дату syncDate (снимок «на сегодня» в момент sync)
+      doneToday: !!t.doneToday,
+      doneDate: syncDate,
+    })).filter((t) => t.id && t.reminderTime) : [];
+
     await env.VEYO_KV.put(
       `user:${userId}`,
       JSON.stringify({
         tz: (typeof body.tz === 'string' && body.tz) || 'UTC',
-        tasks: Array.isArray(body.tasks) ? body.tasks : [],
+        leadMin,
+        tasks,
         updatedAt: new Date().toISOString(),
       })
     );
@@ -70,94 +185,214 @@ async function handleSync(request, env) {
   }
 }
 
-// ---- POST /webhook (Telegram) ----
+// ---- GET /api/state (отметки «выполнено» из бота, для мержа в мини-аппе) ----
+async function handleState(request, env, url) {
+  try {
+    const userId = url.searchParams.get('user_id');
+    if (!userId) return json({ ok: false, error: 'missing user_id' }, 400);
+
+    const done = {};
+    let cursor;
+    do {
+      const page = await env.VEYO_KV.list({ prefix: `done:${userId}:`, cursor });
+      for (const key of page.keys) {
+        // done:<uid>:<YYYY-MM-DD>:<taskId>
+        const rest = key.name.slice(`done:${userId}:`.length);
+        const date = rest.slice(0, 10);
+        const taskId = rest.slice(11);
+        if (!date || !taskId) continue;
+        (done[taskId] = done[taskId] || []).push(date);
+      }
+      cursor = page.cursor;
+    } while (cursor);
+    return json({ ok: true, done });
+  } catch (err) {
+    return json({ ok: false, error: String((err && err.message) || err) }, 500);
+  }
+}
+
+// выполнено ли сегодня (снимок из sync актуален только если sync был сегодня)
+function isDoneToday(userData, userId, task, today) {
+  if (task.doneDate === today && task.doneToday) return true;
+  return false;
+}
+
+async function doneInKv(env, userId, taskId, today) {
+  return !!(await env.VEYO_KV.get(`done:${userId}:${today}:${taskId}`));
+}
+
+// ---- POST /webhook (Telegram: message + callback_query) ----
 async function handleWebhook(request, env) {
   try {
     const update = await request.json();
+
+    // обычное сообщение: запоминаем chat_id
     const msg = update && (update.message || update.channel_post);
-    const from = msg && (msg.from || msg.sender_chat);
-    const chat = msg && msg.chat;
-    if (from && from.id && chat && chat.id) {
-      // chat_id привязан к telegram user_id (бот шлёт напоминания в этот чат)
-      await env.VEYO_KV.put(`chat:${from.id}`, String(chat.id));
+    if (msg) {
+      const from = msg.from || msg.sender_chat;
+      const chat = msg.chat;
+      if (from && from.id && chat && chat.id) {
+        await env.VEYO_KV.put(`chat:${from.id}`, String(chat.id));
+      }
+      return json({ ok: true });
     }
-    // Бот в режиме «только плашка»: на сообщения не отвечаем
+
+    // кнопка «Выполнено»
+    const cq = update && update.callback_query;
+    if (cq) {
+      await handleDoneButton(cq, env);
+      return json({ ok: true });
+    }
+
     return json({ ok: true });
   } catch (err) {
     return json({ ok: false, error: String((err && err.message) || err) }, 500);
   }
 }
 
-// ---- Отправка одного сообщения ----
-async function sendTelegram(env, chatId, text) {
-  const resp = await fetch(`https://api.telegram.org/bot${env.BOT_TOKEN}/sendMessage`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ chat_id: chatId, text }),
-  });
-  if (!resp.ok) {
-    const body = await resp.text();
-    throw new Error(`Telegram ${resp.status}: ${body.slice(0, 300)}`);
+async function answerCq(env, cqId, text) {
+  try {
+    const payload = { callback_query_id: cqId };
+    if (text) payload.text = text;
+    await tgApi(env, 'answerCallbackQuery', payload);
+  } catch (err) {
+    console.error('answerCallbackQuery fail:', String(err));
   }
 }
 
-// ---- Cron: доставка напоминаний ----
+async function handleDoneButton(cq, env) {
+  const data = String(cq.data || '');
+  if (!data.startsWith('done:')) return;
+  const taskId = data.slice('done:'.length);
+  const from = cq.from;
+  const userId = from && from.id;
+  const cMsg = cq.message;
+  if (!userId || !taskId) return;
+  try { await answerCq(env, cq.id); } catch { /* не критично */ }
+
+  const raw = await env.VEYO_KV.get(`user:${userId}`);
+  if (!raw) return;
+  let userData;
+  try { userData = JSON.parse(raw); } catch { return; }
+
+  const task = (userData.tasks || []).find((t) => t.id === taskId);
+  if (!task) return; // задача удалена — молча игнорим
+
+  const tz = userData.tz || 'UTC';
+  const today = dateInTz(tz);
+
+  const already = await env.VEYO_KV.get(`done:${userId}:${today}:${taskId}`);
+  if (!already) {
+    await env.VEYO_KV.put(`done:${userId}:${today}:${taskId}`, '1', { expirationTtl: DONE_TTL_SEC });
+  }
+
+  // редактируем сообщение: галочка, без кнопок
+  if (cMsg && cMsg.chat && cMsg.message_id) {
+    try {
+      await tgApi(env, 'editMessageText', {
+        chat_id: cMsg.chat.id,
+        message_id: cMsg.message_id,
+        text: `✅ ${taskIcon(task)} ${task.name} — выполнено`,
+        reply_markup: { inline_keyboard: [] },
+      });
+    } catch (err) {
+      console.error('editMessageText fail:', String(err));
+    }
+  }
+}
+
+// ---- Cron: доставка ----
 async function deliverReminders(env) {
   if (!env.BOT_TOKEN) {
     console.error('BOT_TOKEN не задан');
     return;
   }
-  const list = await env.VEYO_KV.list({ prefix: 'user:' });
-  for (const key of list.keys) {
-    const userId = key.name.slice('user:'.length);
-    const raw = await env.VEYO_KV.get(key.name);
-    if (!raw) continue;
-
-    let data;
-    try { data = JSON.parse(raw); } catch { continue; }
-    if (!data.tz || !Array.isArray(data.tasks) || data.tasks.length === 0) continue;
-
-    const chatId = await env.VEYO_KV.get(`chat:${userId}`);
-    if (!chatId) continue; // пользователь ещё не открывал чат с ботом
-
-    const now = new Date();
-    const hhmm = timeInTz(data.tz, now);
-    const day = dateInTz(data.tz, now);
-
-    for (const task of data.tasks) {
-      if (!task || !task.active || !task.reminderTime) continue;
-      if (task.reminderTime !== hhmm) continue;
-
-      // защита от дублей: одно напоминание на задачу в день
-      const sentKey = `sent:${userId}:${day}:${task.id}`;
-      const already = await env.VEYO_KV.get(sentKey);
-      if (already) continue;
-
-      try {
-        await sendTelegram(env, chatId, `Напоминание ${task.emoji || '🔔'} ${task.name}`);
-        await env.VEYO_KV.put(sentKey, '1', { expirationTtl: 86400 });
-      } catch (err) {
-        console.error(`send fail user=${userId} task=${task.id}:`, String(err));
-      }
+  const now = new Date();
+  let cursor;
+  do {
+    const page = await env.VEYO_KV.list({ prefix: 'user:', cursor });
+    for (const key of page.keys) {
+      await deliverForUser(env, key, now);
     }
-  }
+    cursor = page.cursor;
+  } while (cursor);
+}
+
+async function deliverForUser(env, key, now) {
+    const userId = key.name.slice('user:'.length);
+    try {
+      const raw = await env.VEYO_KV.get(key.name);
+      if (!raw) return;
+      const userData = JSON.parse(raw);
+      if (!userData.tz || !Array.isArray(userData.tasks) || userData.tasks.length === 0) return;
+
+      const chatId = await env.VEYO_KV.get(`chat:${userId}`);
+      if (!chatId) return; // пользователь не открывал чат с ботом
+
+      const tz = userData.tz;
+      const today = dateInTz(tz, now);
+      const nowHhmm = timeInTz(tz, now);
+      const nowMin = parseHhmm(nowHhmm);
+      if (nowMin === null) return;
+      const leadMin = Number.isInteger(userData.leadMin) ? userData.leadMin : DEFAULT_LEAD_MIN;
+
+      for (const task of userData.tasks) {
+        if (!task || !task.reminderTime || !task.active) continue;
+        const taskMin = parseHhmm(task.reminderTime);
+        if (taskMin === null) continue;
+
+        // задача уже выполнена сегодня (снимок sync сегодняшний или отметка из бота)
+        const done = isDoneToday(userData, userId, task, today) || (await doneInKv(env, userId, task.id, today));
+
+        // 1) предупреждение за leadMin минут до времени задачи
+        if (!done && leadMin > 0) {
+          const warnMin = (taskMin - leadMin + 1440) % 1440;
+          if (nowMin === warnMin && !(await alreadySent(env, userId, today, task.id, 'warn'))) {
+            await sendTelegram(env, chatId, taskLine(task, true));
+            await markSent(env, userId, today, task.id, 'warn');
+          }
+        }
+
+        // 2) уведомление в само время задачи (+ кнопка «Выполнено», пока goal <= 1)
+        if (!done && nowMin === taskMin && !(await alreadySent(env, userId, today, task.id, 'due'))) {
+          const goal = task.goal || 1;
+          const extra = goal <= 1
+            ? { reply_markup: { inline_keyboard: [[{ text: '✅ Выполнено', callback_data: `done:${task.id}` }]] } }
+            : {};
+          await sendTelegram(env, chatId, taskLine(task, false), extra);
+          await markSent(env, userId, today, task.id, 'due');
+        }
+      }
+    } catch (err) {
+      console.error(`deliver fail user=${userId}:`, String(err));
+    }
+}
+
+async function alreadySent(env, userId, date, taskId, kind) {
+  return !!(await env.VEYO_KV.get(`sent:${userId}:${date}:${taskId}:${kind}`));
+}
+
+async function markSent(env, userId, date, taskId, kind) {
+  await env.VEYO_KV.put(`sent:${userId}:${date}:${taskId}:${kind}`, '1', { expirationTtl: SENT_TTL_SEC });
 }
 
 export default {
   async fetch(request, env) {
     const url = new URL(request.url);
-
     if (request.method === 'OPTIONS') {
       return new Response(null, { status: 204, headers: CORS });
     }
     if (url.pathname === '/api/sync' && request.method === 'POST') {
       return handleSync(request, env);
     }
+    if (url.pathname === '/api/state' && request.method === 'GET') {
+      return handleState(request, env, url);
+    }
     if (url.pathname === '/webhook' && request.method === 'POST') {
       return handleWebhook(request, env);
     }
     if (url.pathname === '/') {
-      return json({ ok: true, service: 'veyo-reminders' });
+      return json({ ok: true, service: 'veyo-reminders', version: 2 });
     }
     return json({ ok: false, error: 'not found' }, 404);
   },
