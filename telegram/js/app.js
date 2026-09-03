@@ -208,7 +208,7 @@
     let toastTimer = null;
     let confirmResolver = null;
     let userEditedName = false;
-    let leadMin = 0;
+    let leadMin = 30;
 
     const $ = (sel) => document.querySelector(sel);
     const $$ = (sel) => document.querySelectorAll(sel);
@@ -577,10 +577,12 @@
             const raw = localStorage.getItem(SETTINGS_KEY);
             if (raw) {
                 const s = JSON.parse(raw);
-                leadMin = typeof s.leadMin === 'number' ? s.leadMin : 0;
+                leadMin = typeof s.leadMin === 'number' ? s.leadMin : 30;
+            } else {
+                leadMin = 30; // дефолт по спеке: предупреждение за 30 минут
             }
         } catch {
-            leadMin = 0;
+            leadMin = 30;
         }
     }
 
@@ -2095,6 +2097,7 @@
         loadHistory();
         loadSettings();
         purgeDonePeriodlessHabits();
+        fetchState(); // подтянуть отметки «выполнено» из бота (кнопка в Telegram) и смержить
 
         $('#currentDate').textContent = formatDate(new Date());
 

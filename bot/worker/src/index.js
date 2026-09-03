@@ -186,6 +186,8 @@ async function handleSync(request, env) {
 }
 
 // ---- GET /api/state (отметки «выполнено» из бота, для мержа в мини-аппе) ----
+// Ответ: { ok, done: { <taskId>: ["YYYY-MM-DD", ...] }, tasks: [{ id, doneToday }] }
+// tasks[].doneToday = есть отметка бота на сегодня — это читает мини-апп при мерже.
 async function handleState(request, env, url) {
   try {
     const userId = url.searchParams.get('user_id');
@@ -205,7 +207,22 @@ async function handleState(request, env, url) {
       }
       cursor = page.cursor;
     } while (cursor);
-    return json({ ok: true, done });
+
+    // tz пользователя нужен, чтобы вычислить «сегодня» для флага doneToday
+    let today = dateInTz('UTC');
+    try {
+      const raw = await env.VEYO_KV.get(`user:${userId}`);
+      if (raw) {
+        const u = JSON.parse(raw);
+        if (u.tz) today = dateInTz(u.tz);
+      }
+    } catch { /* дефолт UTC */ }
+
+    const tasks = Object.keys(done)
+      .filter((taskId) => done[taskId].includes(today))
+      .map((taskId) => ({ id: taskId, doneToday: true }));
+
+    return json({ ok: true, done, tasks });
   } catch (err) {
     return json({ ok: false, error: String((err && err.message) || err) }, 500);
   }
