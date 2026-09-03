@@ -2026,21 +2026,11 @@
         const plan = $('#plan');
         plan.innerHTML = '';
 
-        if (habits.length === 0 && plans.length === 0) {
-            const empty = document.createElement('div');
-            empty.className = 'empty-state plan-empty';
-            empty.innerHTML = `
-                <button type="button" class="empty-icon" title="Создать план" aria-label="Создать план">📅</button>
-                <p>Добавьте задачи, чтобы увидеть план на период</p>
-            `;
-            empty.querySelector('.empty-icon').addEventListener('click', () => openPlanModal());
-            plan.appendChild(empty);
-            return;
-        }
-
         const t = today();
+        let hasContent = false;
 
         plans.forEach(p => {
+            hasContent = true;
             const group = document.createElement('div');
             group.className = 'plan-grid-group';
             group.style.setProperty('--habit-color', p.color);
@@ -2065,8 +2055,20 @@
 
         habits.forEach(habit => {
             if (isPeriodless(habit)) return;
+            hasContent = true;
             plan.appendChild(buildPlanRow(habit, habit, t));
         });
+
+        if (!hasContent) {
+            const empty = document.createElement('div');
+            empty.className = 'empty-state plan-empty';
+            empty.innerHTML = `
+                <button type="button" class="empty-icon" title="Создать план" aria-label="Создать план">📅</button>
+                <p>Добавьте задачи с периодом или создайте план</p>
+            `;
+            empty.querySelector('.empty-icon').addEventListener('click', () => openPlanModal());
+            plan.appendChild(empty);
+        }
     }
 
     function init() {

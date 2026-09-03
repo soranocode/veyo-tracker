@@ -208,7 +208,7 @@
     let toastTimer = null;
     let confirmResolver = null;
     let userEditedName = false;
-    let leadMin = 30;
+    let leadMin = 0;
 
     const $ = (sel) => document.querySelector(sel);
     const $$ = (sel) => document.querySelectorAll(sel);
@@ -335,7 +335,7 @@
             return {
                 id: h.id,
                 name: h.name,
-                emoji: h.emoji || '',
+                emoji: h.emoji || '🔔',
                 color: h.color,
                 goal: h.goal,
                 doneToday,
@@ -577,12 +577,10 @@
             const raw = localStorage.getItem(SETTINGS_KEY);
             if (raw) {
                 const s = JSON.parse(raw);
-                leadMin = typeof s.leadMin === 'number' ? s.leadMin : 30;
-            } else {
-                leadMin = 30; // дефолт по спеке: предупреждение за 30 минут
+                leadMin = typeof s.leadMin === 'number' ? s.leadMin : 0;
             }
         } catch {
-            leadMin = 30;
+            leadMin = 0;
         }
     }
 
@@ -2028,21 +2026,11 @@
         const plan = $('#plan');
         plan.innerHTML = '';
 
-        if (habits.length === 0 && plans.length === 0) {
-            const empty = document.createElement('div');
-            empty.className = 'empty-state plan-empty';
-            empty.innerHTML = `
-                <button type="button" class="empty-icon" title="Создать план" aria-label="Создать план">📅</button>
-                <p>Добавьте задачи, чтобы увидеть план на период</p>
-            `;
-            empty.querySelector('.empty-icon').addEventListener('click', () => openPlanModal());
-            plan.appendChild(empty);
-            return;
-        }
-
         const t = today();
+        let hasContent = false;
 
         plans.forEach(p => {
+            hasContent = true;
             const group = document.createElement('div');
             group.className = 'plan-grid-group';
             group.style.setProperty('--habit-color', p.color);
@@ -2067,8 +2055,20 @@
 
         habits.forEach(habit => {
             if (isPeriodless(habit)) return;
+            hasContent = true;
             plan.appendChild(buildPlanRow(habit, habit, t));
         });
+
+        if (!hasContent) {
+            const empty = document.createElement('div');
+            empty.className = 'empty-state plan-empty';
+            empty.innerHTML = `
+                <button type="button" class="empty-icon" title="Создать план" aria-label="Создать план">📅</button>
+                <p>Добавьте задачи с периодом или создайте план</p>
+            `;
+            empty.querySelector('.empty-icon').addEventListener('click', () => openPlanModal());
+            plan.appendChild(empty);
+        }
     }
 
     function init() {
@@ -2097,7 +2097,6 @@
         loadHistory();
         loadSettings();
         purgeDonePeriodlessHabits();
-        fetchState(); // подтянуть отметки «выполнено» из бота (кнопка в Telegram) и смержить
 
         $('#currentDate').textContent = formatDate(new Date());
 
