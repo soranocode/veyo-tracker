@@ -1926,6 +1926,7 @@
             $$('.emoji-btn').forEach(btn => {
                 btn.classList.remove('selected');
             });
+            $('.no-emoji-btn').classList.add('selected');
             $('#customEmoji').value = '';
             $$('.color-btn').forEach((btn, i) => {
                 btn.classList.toggle('selected', i === 0);
@@ -2148,10 +2149,16 @@
 
         $$('.emoji-btn').forEach(btn => {
             btn.addEventListener('click', () => {
+                if (btn.classList.contains('selected')) {
+                    $$('.emoji-btn').forEach(b => b.classList.remove('selected'));
+                    $('.no-emoji-btn').classList.add('selected');
+                    $('#customEmoji').value = '';
+                    return;
+                }
                 $$('.emoji-btn').forEach(b => b.classList.remove('selected'));
                 btn.classList.add('selected');
                 $('#customEmoji').value = '';
-                applyEmojiName(btn.dataset.emoji);
+                if (btn.dataset.emoji) applyEmojiName(btn.dataset.emoji);
             });
         });
 
@@ -2307,10 +2314,16 @@
         });
         $$('.i-emoji-btn').forEach(btn => {
             btn.addEventListener('click', () => {
+                if (btn.classList.contains('selected')) {
+                    $$('.i-emoji-btn').forEach(b => b.classList.remove('selected'));
+                    $('.i-emoji-btn.no-emoji-btn').classList.add('selected');
+                    $('#itemCustomEmoji').value = '';
+                    return;
+                }
                 $$('.i-emoji-btn').forEach(b => b.classList.remove('selected'));
                 btn.classList.add('selected');
                 $('#itemCustomEmoji').value = '';
-                applyItemEmojiName(btn.dataset.emoji);
+                if (btn.dataset.emoji) applyItemEmojiName(btn.dataset.emoji);
             });
         });
         $('#itemCustomEmoji').addEventListener('input', () => {

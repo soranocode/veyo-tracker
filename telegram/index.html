@@ -88,7 +88,8 @@
                         <label>Иконка</label>
                         <div class="emoji-group">
                             <div class="emoji-picker" id="emojiPicker">
-                                <button type="button" class="emoji-btn selected" data-emoji="💧">💧</button>
+                                <button type="button" class="emoji-btn no-emoji-btn selected" data-emoji="" title="Без смайлика"></button>
+                                <button type="button" class="emoji-btn" data-emoji="💧">💧</button>
                                 <button type="button" class="emoji-btn" data-emoji="🏃">🏃</button>
                                 <button type="button" class="emoji-btn" data-emoji="📚">📚</button>
                                 <button type="button" class="emoji-btn" data-emoji="🏋️">🏋️</button>
@@ -98,8 +99,6 @@
                                 <button type="button" class="emoji-btn" data-emoji="🧹">🧹</button>
                                 <button type="button" class="emoji-btn" data-emoji="🚶">🚶</button>
                                 <button type="button" class="emoji-btn" data-emoji="🎯">🎯</button>
-                                <button type="button" class="emoji-btn" data-emoji="🚬">🚬</button>
-                                <button type="button" class="emoji-btn" data-emoji="📺">📺</button>
                             </div>
                             <input type="text" class="emoji-input" id="customEmoji" placeholder="Введи свой смайлик" maxlength="20" autocomplete="off">
                         </div>
@@ -248,7 +247,8 @@
                         <label>Иконка</label>
                         <div class="emoji-group">
                             <div class="emoji-picker">
-                                <button type="button" class="i-emoji-btn selected" data-emoji="📚">📚</button>
+                                <button type="button" class="i-emoji-btn no-emoji-btn selected" data-emoji="" title="Без смайлика"></button>
+                                <button type="button" class="i-emoji-btn" data-emoji="📚">📚</button>
                                 <button type="button" class="i-emoji-btn" data-emoji="💧">💧</button>
                                 <button type="button" class="i-emoji-btn" data-emoji="🏃">🏃</button>
                                 <button type="button" class="i-emoji-btn" data-emoji="🏋️">🏋️</button>
@@ -258,8 +258,6 @@
                                 <button type="button" class="i-emoji-btn" data-emoji="🧹">🧹</button>
                                 <button type="button" class="i-emoji-btn" data-emoji="🚶">🚶</button>
                                 <button type="button" class="i-emoji-btn" data-emoji="🎯">🎯</button>
-                                <button type="button" class="i-emoji-btn" data-emoji="🚬">🚬</button>
-                                <button type="button" class="i-emoji-btn" data-emoji="📺">📺</button>
                             </div>
                             <input type="text" class="emoji-input" id="itemCustomEmoji" placeholder="Введи свой смайлик" maxlength="20" autocomplete="off">
                         </div>
@@ -377,9 +375,9 @@
                             <span class="setting-label">За сколько минут напоминать</span>
                             <div class="setting-options" id="leadMinOptions">
                                 <button type="button" class="setting-opt" data-value="60">1 час</button>
-                                <button type="button" class="setting-opt selected" data-value="30">30 мин</button>
+                                <button type="button" class="setting-opt" data-value="30">30 мин</button>
                                 <button type="button" class="setting-opt" data-value="15">15 мин</button>
-                                <button type="button" class="setting-opt" data-value="0">Не напоминать</button>
+                                <button type="button" class="setting-opt selected" data-value="0">Не напоминать</button>
                             </div>
                         </div>
                     </div>
@@ -390,6 +388,6 @@
 
     <button type="button" class="dev-clear-btn" id="devClearBtn" title="Dev: очистить все данные" hidden>DEV ✕</button>
 
-    <script src="js/app.js?v=7"></script>
+    <script src="js/app.js?v=5"></script>
 </body>
 </html>

@@ -1452,6 +1452,29 @@ body.move-mode .habit-card.leaving {
     transform: scale(1.08);
 }
 
+.emoji-btn.no-emoji-btn::after {
+    content: '';
+    width: 18px;
+    height: 18px;
+    border: 2px solid var(--text-secondary);
+    border-radius: 3px;
+    position: relative;
+}
+
+.emoji-btn.no-emoji-btn::before {
+    content: '';
+    width: 24px;
+    height: 2px;
+    background: var(--text-secondary);
+    position: absolute;
+    transform: rotate(-45deg);
+    border-radius: 1px;
+}
+
+.emoji-btn.no-emoji-btn {
+    position: relative;
+}
+
 .emoji-input {
     width: 100%;
     height: 56px;
