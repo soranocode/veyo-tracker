@@ -208,7 +208,7 @@
     let toastTimer = null;
     let confirmResolver = null;
     let userEditedName = false;
-    let leadMin = 0;
+    let leadMin = 30;
 
     const $ = (sel) => document.querySelector(sel);
     const $$ = (sel) => document.querySelectorAll(sel);
@@ -309,6 +309,7 @@
 
     function save() {
         localStorage.setItem(STORAGE_KEY, JSON.stringify(habits));
+        cloudQueue(STORAGE_KEY);
         syncRemindersToBackend();
     }
 
@@ -335,7 +336,7 @@
             return {
                 id: h.id,
                 name: h.name,
-                emoji: h.emoji || '🔔',
+                emoji: h.emoji || '',
                 color: h.color,
                 goal: h.goal,
                 doneToday,
@@ -464,6 +465,7 @@
     function toggleTheme() {
         const isDark = document.documentElement.getAttribute('data-theme') === 'dark';
         localStorage.setItem(THEME_KEY, isDark ? 'light' : 'dark');
+        cloudQueue(THEME_KEY);
         applyTheme(!isDark);
     }
 
@@ -555,6 +557,7 @@
                 });
                 stats = { total, today: todayCount, todayDate: todayStr };
                 localStorage.setItem(STATS_KEY, JSON.stringify(stats));
+                cloudQueue(STATS_KEY);
             }
         } catch {
             stats = { total: 0, today: 0, todayDate: '' };
@@ -570,6 +573,7 @@
 
     function saveStats() {
         localStorage.setItem(STATS_KEY, JSON.stringify(stats));
+        cloudQueue(STATS_KEY);
     }
 
     function loadSettings() {
@@ -577,15 +581,18 @@
             const raw = localStorage.getItem(SETTINGS_KEY);
             if (raw) {
                 const s = JSON.parse(raw);
-                leadMin = typeof s.leadMin === 'number' ? s.leadMin : 0;
+                leadMin = typeof s.leadMin === 'number' ? s.leadMin : 30;
+            } else {
+                leadMin = 30; // дефолт по спеке: предупреждение за 30 минут
             }
         } catch {
-            leadMin = 0;
+            leadMin = 30;
         }
     }
 
     function saveSettings() {
         localStorage.setItem(SETTINGS_KEY, JSON.stringify({ leadMin }));
+        cloudQueue(SETTINGS_KEY);
     }
 
     // ===================== История выполнений =====================
@@ -602,6 +609,7 @@
     function saveHistory() {
         if (history.length > 500) history.length = 500;
         localStorage.setItem(HISTORY_KEY, JSON.stringify(history));
+        cloudQueue(HISTORY_KEY);
     }
 
     function logCompletion(container, item, dateStr, wasDone, isDone) {
@@ -1279,6 +1287,7 @@
 
     function savePlans() {
         localStorage.setItem(PLANS_KEY, JSON.stringify(plans));
+        cloudQueue(PLANS_KEY);
     }
 
     function planEndDateOf(plan) {
@@ -2098,6 +2107,7 @@
         loadHistory();
         loadSettings();
         purgeDonePeriodlessHabits();
+        fetchState(); // подтянуть отметки «выполнено» из бота (кнопка в Telegram) и смержить
 
         $('#currentDate').textContent = formatDate(new Date());
 
@@ -2619,5 +2629,149 @@
         }
     }
 
-    document.addEventListener('DOMContentLoaded', init);
+    // ===================== Облачная синхронизация (Telegram CloudStorage) =====================
+    // localStorage живёт на устройстве -> телефон и ПК одного аккаунта расходились.
+    // Дублируем ключи в Telegram CloudStorage (облако TG, изолировано по пользователям):
+    //   pull при старте (облако -> localStorage), push после каждого сохранения (debounce).
+    // Значения больше CLOUD_CHUNK_BYTES режем на куски 'v1.<localKey>#<n>' (склейка точная).
+    // Ограничения TG: <=4096 байт на значение, всего ~1024KB на юзера — запас большой.
+    const CLOUD_PREFIX = 'v1.';
+    const CLOUD_CHUNK_BYTES = 3500;
+    const CLOUD_LOCAL_KEYS = [STORAGE_KEY, THEME_KEY, PLANS_KEY, LIFETIME_KEY, HISTORY_KEY, SETTINGS_KEY, STATS_KEY];
+    let cloudAvailable = false;
+    let cloudChunkKeys = new Set();
+    const cloudPending = new Set();
+    let cloudTimer = null;
+    let cloudFlushChain = Promise.resolve();
+
+    function cloudStore() {
+        try {
+            return (window.Telegram && window.Telegram.WebApp && window.Telegram.WebApp.CloudStorage)
+                ? window.Telegram.WebApp.CloudStorage : null;
+        } catch { return null; }
+    }
+
+    function cloudCall(method, ...args) {
+        return new Promise((resolve) => {
+            try {
+                const cs = cloudStore();
+                if (!cs || !cs[method]) return resolve(null);
+                cs[method](...args, (err, res) => resolve(err ? null : res));
+            } catch { resolve(null); }
+        });
+    }
+
+    async function cloudGetKeys() { return (await cloudCall('getKeys')) || []; }
+    async function cloudGetItem(key) { return await cloudCall('getItem', key); }
+    async function cloudSetItem(key, value) { await cloudCall('setItem', key, value); }
+    async function cloudRemoveItem(key) { await cloudCall('removeItem', key); }
+
+    function utf8Bytes(s) { try { return new TextEncoder().encode(s).length; } catch { return s.length; } }
+
+    function chunkValue(value) {
+        const chunks = [];
+        let cur = '';
+        for (const ch of value) {
+            if (cur && utf8Bytes(cur + ch) > CLOUD_CHUNK_BYTES) { chunks.push(cur); cur = ch; }
+            else cur += ch;
+        }
+        if (cur) chunks.push(cur);
+        return chunks.length ? chunks : [''];
+    }
+
+    async function cloudPushKey(localKey) {
+        const value = localStorage.getItem(localKey);
+        if (value === null) return;
+        const chunks = chunkValue(value);
+        const prefix = CLOUD_PREFIX + localKey + '#';
+        const newKeys = chunks.map((c, i) => prefix + i);
+        const known = Array.from(cloudChunkKeys).filter(k => k.startsWith(prefix));
+        for (const k of known) {
+            if (!newKeys.includes(k)) { await cloudRemoveItem(k); cloudChunkKeys.delete(k); }
+        }
+        for (let i = 0; i < chunks.length; i++) {
+            const k = prefix + i;
+            if (known.includes(k)) {
+                const cur = await cloudGetItem(k);
+                if (cur === chunks[i]) { cloudChunkKeys.add(k); continue; } // не изменился — не пишем
+            }
+            await cloudSetItem(k, chunks[i]);
+            cloudChunkKeys.add(k);
+        }
+    }
+
+    // облако -> localStorage. Возвращает true, если в облаке были данные
+    async function cloudPull() {
+        const keys = await cloudGetKeys();
+        const byLocal = {};
+        keys.forEach(k => {
+            if (!k.startsWith(CLOUD_PREFIX)) return;
+            const rest = k.slice(CLOUD_PREFIX.length);
+            const hashIdx = rest.indexOf('#');
+            if (hashIdx < 0) return;
+            const localKey = rest.slice(0, hashIdx);
+            const idx = parseInt(rest.slice(hashIdx + 1), 10);
+            if (!Number.isFinite(idx)) return;
+            (byLocal[localKey] = byLocal[localKey] || {})[idx] = k;
+            cloudChunkKeys.add(k);
+        });
+        let any = false;
+        for (const localKey of Object.keys(byLocal)) {
+            const idxMap = byLocal[localKey];
+            const maxIdx = Math.max(...Object.keys(idxMap).map(Number));
+            let value = '';
+            let ok = true;
+            for (let i = 0; i <= maxIdx; i++) {
+                const k = idxMap[i];
+                if (!k) { ok = false; break; }
+                const v = await cloudGetItem(k);
+                if (v === null) { ok = false; break; }
+                value += v;
+            }
+            if (!ok) continue;
+            localStorage.setItem(localKey, value);
+            any = true;
+        }
+        return any;
+    }
+
+    function cloudQueue(localKey) {
+        if (!cloudAvailable) return;
+        cloudPending.add(localKey);
+        if (cloudTimer) clearTimeout(cloudTimer);
+        cloudTimer = setTimeout(cloudFlush, 600);
+    }
+
+    function cloudFlush() {
+        cloudTimer = null;
+        if (!cloudOk()) { cloudPending.clear(); return; }
+        const keys = Array.from(cloudPending);
+        cloudPending.clear();
+        cloudFlushChain = cloudFlushChain.then(async () => {
+            for (const k of keys) {
+                try { await cloudPushKey(k); }
+                catch (e) { console.warn('cloud push fail', k, e); }
+            }
+        });
+    }
+
+    function cloudOk() { return cloudAvailable && !!cloudStore(); }
+
+    async function cloudBoot() {
+        try {
+            if (!tg || !tg.initDataUnsafe || !tg.initDataUnsafe.user || !cloudStore()) return; // вне TG — локально
+            cloudAvailable = true;
+            const hadCloud = await cloudPull();
+            if (!hadCloud) {
+                // миграция: локальные данные впервые -> залить в облако
+                CLOUD_LOCAL_KEYS.forEach(k => { if (localStorage.getItem(k) !== null) cloudPending.add(k); });
+                setTimeout(cloudFlush, 400);
+            }
+        } catch (e) {
+            cloudAvailable = false;
+            console.warn('cloud boot fail', e);
+        }
+    }
+
+    document.addEventListener('DOMContentLoaded', () => { cloudBoot().then(init); });
 })();
