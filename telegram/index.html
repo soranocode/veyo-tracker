@@ -109,10 +109,6 @@
                         <input type="text" id="habitName" placeholder="Например: Пить воду" required>
                         <p class="form-error" id="nameError" hidden>Введите название задачи</p>
                     </div>
-                    <div class="form-group">
-                        <label for="habitGoal">Цель (раз в день)</label>
-                        <input type="number" id="habitGoal" value="1" min="1" max="100" step="1">
-                    </div>
                     <div class="form-group" id="periodGroup">
                         <label for="periodSlider">Период</label>
                         <div class="period-display" id="periodDisplay" role="button" tabindex="0" title="Нажмите, чтобы ввести свой период">
@@ -270,10 +266,6 @@
                         <p class="form-error" id="itemNameError" hidden>Введите название задачи</p>
                     </div>
                     <div class="form-group">
-                        <label for="itemGoal">Цель (раз в день)</label>
-                        <input type="number" id="itemGoal" value="1" min="1" max="100" step="1">
-                    </div>
-                    <div class="form-group">
                         <label for="itemPeriodDays">Период</label>
                         <div class="period-presets" id="itemPeriodPresets">
                             <button type="button" class="preset-btn" data-days="7">1 нед</button>
@@ -377,9 +369,9 @@
                             <span class="setting-label">За сколько минут напоминать</span>
                             <div class="setting-options" id="leadMinOptions">
                                 <button type="button" class="setting-opt" data-value="60">1 час</button>
-                                <button type="button" class="setting-opt selected" data-value="30">30 мин</button>
+                                <button type="button" class="setting-opt" data-value="30">30 мин</button>
                                 <button type="button" class="setting-opt" data-value="15">15 мин</button>
-                                <button type="button" class="setting-opt" data-value="0">Не напоминать</button>
+                                <button type="button" class="setting-opt selected" data-value="0">Не напоминать</button>
                             </div>
                         </div>
                     </div>
@@ -388,9 +380,7 @@
         </div>
     </div>
 
-    <button type="button" class="dev-clear-btn" id="devClearBtn" title="Dev: очистить все данные" hidden>DEV ✕</button>
-
-    <!-- v9 (09.09.2026): серверная синхронизация (вариант B) — слой CloudStorage заменён на worker /api/data. ⚠️ КОДЕР: не откатывать (см. шапку секции синхронизации в js/app.js). -->
-    <script src="js/app.js?v=9"></script>
+    <!-- v10 (09.09.2026): фича «Цель» удалена (бинарное выполнение); серверная синхронизация (вариант B) — CloudStorage заменён на worker /api/data. ⚠️ КОДЕР: синк-слой не откатывать (см. шапку секции синхронизации в js/app.js). -->
+    <script src="js/app.js?v=10"></script>
 </body>
 </html>

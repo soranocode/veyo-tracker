@@ -612,31 +612,6 @@ body.modal-open {
     background: rgba(225, 112, 85, 0.1);
 }
 
-/* Dev-only: сброс данных (не попадёт в релиз) */
-.dev-clear-btn {
-    position: fixed;
-    bottom: calc(env(safe-area-inset-bottom, 0px) + 8px);
-    right: 8px;
-    z-index: 40;
-    font-size: 0.62rem;
-    font-weight: 700;
-    letter-spacing: 0.5px;
-    padding: 4px 8px;
-    border: 1px solid rgba(225, 112, 85, 0.45);
-    background: rgba(225, 112, 85, 0.12);
-    color: var(--danger);
-    border-radius: var(--radius-sm);
-    cursor: pointer;
-    opacity: 0.3;
-    transition: opacity var(--transition), transform var(--transition), background var(--transition);
-}
-
-.dev-clear-btn:hover {
-    opacity: 1;
-    transform: scale(1.05);
-    background: rgba(225, 112, 85, 0.2);
-}
-
 /* Задача без периода */
 .no-period-toggle {
     display: flex;
@@ -1262,11 +1237,6 @@ body.move-mode .habit-card.leaving {
     color: #fff;
     border-color: transparent;
     font-weight: 700;
-}
-
-.plan-cell.partial {
-    color: var(--text);
-    border-color: transparent;
 }
 
 .plan-cell.today {

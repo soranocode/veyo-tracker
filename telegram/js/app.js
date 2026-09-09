@@ -271,7 +271,6 @@
         );
 
         habits.forEach(h => {
-            h.goal = Math.min(Math.max(parseInt(h.goal, 10) || 1, 1), 100);
             h.periodDays = (h.periodDays === null || h.periodDays === undefined || h.periodDays === '')
                 ? null
                 : Math.min(Math.max(parseInt(h.periodDays, 10) || DEFAULT_PERIOD, 1), 365);
@@ -332,13 +331,12 @@
             const end = endDateOf(h);
             const started = !h.startDate || t >= h.startDate;
             const overdue = !!(end && t > end);
-            const doneToday = (h.completions[t] || 0) >= h.goal;
+            const doneToday = (h.completions[t] || 0) > 0;
             return {
                 id: h.id,
                 name: h.name,
                 emoji: h.emoji || '',
                 color: h.color,
-                goal: h.goal,
                 doneToday,
                 reminderTime: h.reminderTime,
                 active: started && !overdue && !doneToday
@@ -475,7 +473,7 @@
     }
 
     function isCompletedToday(habit) {
-        return getHabitCount(habit, today()) >= habit.goal;
+        return getHabitCount(habit, today()) > 0;
     }
 
     // Серия дней считается по истории выполнений:
@@ -509,7 +507,7 @@
         const start = habit.startDate;
         const end = endDateOf(habit);
         return Object.entries(habit.completions || {}).reduce((acc, [d, c]) => {
-            return d >= start && d <= end && c >= habit.goal ? acc + 1 : acc;
+            return d >= start && d <= end && c > 0 ? acc + 1 : acc;
         }, 0);
     }
 
@@ -543,11 +541,11 @@
                 let todayCount = 0;
                 habits.forEach(h => {
                     if (isPeriodless(h)) {
-                        if (getHabitCount(h, todayStr) >= h.goal) todayCount++;
+                        if (getHabitCount(h, todayStr) > 0) todayCount++;
                         return;
                     }
                     total += countDaysDone(h);
-                    if (getHabitCount(h, todayStr) >= h.goal) todayCount++;
+                    if (getHabitCount(h, todayStr) > 0) todayCount++;
                 });
                 plans.forEach(p => {
                     p.items.forEach(it => {
@@ -768,9 +766,9 @@
 
     function renderPlanItemCard(plan, item, t, end) {
         const count = getPlanItemCount(plan, item.id, t);
-        const done = count >= item.goal;
-        const progress = Math.min((count / item.goal) * 100, 100);
-        const todayPct = Math.round(progress);
+        const done = count > 0;
+        const progress = done ? 100 : 0;
+        const todayPct = done ? 100 : 0;
         const itemPct = Math.round(planItemProgressFrac(plan, item) * 100);
         const inPeriod = t >= plan.startDate && t <= end;
         const card = document.createElement('div');
@@ -786,7 +784,7 @@
                 <div class="habit-progress-bar">
                     <div class="habit-progress-fill" style="width:${progress}%;background:${plan.color}"></div>
                 </div>
-                <div class="habit-count">${count} / ${item.goal} сегодня • ${itemPct}% за период</div>
+                <div class="habit-count">${done ? '✓ сегодня' : 'не сделано'} • ${itemPct}% за период</div>
             </div>
             <div class="habit-actions">
                 <button class="btn-check${done ? ' checked' : ''}" data-plan="${plan.id}" data-item="${item.id}"
@@ -851,9 +849,9 @@
 
         habits.forEach((habit, index) => {
             const count = getHabitCount(habit, t);
-            const done = count >= habit.goal;
-            const progress = Math.min((count / habit.goal) * 100, 100);
-            const todayPct = Math.round(progress);
+            const done = count > 0;
+            const progress = done ? 100 : 0;
+            const todayPct = done ? 100 : 0;
             const end = endDateOf(habit);
             const noPeriod = isPeriodless(habit);
             const inPeriod = noPeriod || (t >= habit.startDate && t <= end);
@@ -864,11 +862,11 @@
 
             let status;
             if (noPeriod) {
-                status = `${count} / ${habit.goal} сегодня • выполнено всего: ${habit.lifetimeCount || 0}`;
+                status = `${done ? '✓ сегодня' : 'не сделано'} • выполнено всего: ${habit.lifetimeCount || 0}`;
             } else if (finished) {
                 status = `Выполнено ${doneDays} из ${habit.periodDays} ${pld(habit.periodDays)} • ${overallPct}% за период`;
             } else {
-                status = `${count} / ${habit.goal} сегодня • ${overallPct}% за период`;
+                status = `${done ? '✓ сегодня' : 'не сделано'} • ${overallPct}% за период`;
             }
             if (habit.reminderTime) status += ` • 🔔 ${habit.reminderTime}`;
 
@@ -949,9 +947,7 @@
     function toggleHabitOnDate(habit, dateStr) {
         if (!habit.completions) habit.completions = {};
         const current = habit.completions[dateStr] || 0;
-        habit.completions[dateStr] = current >= habit.goal
-            ? 0
-            : current + 1;
+        habit.completions[dateStr] = current > 0 ? 0 : 1;
 
         if (tg && tg.HapticFeedback) {
             try {
@@ -969,9 +965,9 @@
         const t = today();
 
         if (isPeriodless(habit)) {
-            const wasDone = getHabitCount(habit, t) >= habit.goal;
+            const wasDone = getHabitCount(habit, t) > 0;
             toggleHabitOnDate(habit, t);
-            const nowDone = getHabitCount(habit, t) >= habit.goal;
+            const nowDone = getHabitCount(habit, t) > 0;
             logCompletion(habit, habit, t, wasDone, nowDone);
 
             if (!wasDone && nowDone) {
@@ -991,9 +987,9 @@
 
         if (t < habit.startDate || t > endDateOf(habit)) return;
 
-        const wasDone = getHabitCount(habit, t) >= habit.goal;
+        const wasDone = getHabitCount(habit, t) > 0;
         toggleHabitOnDate(habit, t);
-        const nowDone = getHabitCount(habit, t) >= habit.goal;
+        const nowDone = getHabitCount(habit, t) > 0;
         logCompletion(habit, habit, t, wasDone, nowDone);
         save();
         renderHabits();
@@ -1137,7 +1133,6 @@
             id: generateId(),
             emoji: habit.emoji,
             name: habit.name,
-            goal: habit.goal,
             periodDays: habit.periodDays || DEFAULT_PERIOD,
             completions: {}
         };
@@ -1172,7 +1167,6 @@
             id: generateId(),
             name: item.name,
             emoji: item.emoji,
-            goal: item.goal,
             color: plan.color,
             periodDays: item.periodDays || DEFAULT_PERIOD,
             reminderTime: null,
@@ -1214,12 +1208,11 @@
         showToast('Задача удалена');
     }
 
-    function addHabit(name, emoji, goal, color, periodDays, reminderTime) {
+    function addHabit(name, emoji, color, periodDays, reminderTime) {
         habits.push({
             id: generateId(),
             name,
             emoji,
-            goal,
             color,
             periodDays,
             reminderTime: reminderTime || null,
@@ -1236,12 +1229,11 @@
             : `Задача добавлена — период ${formatPeriodFromDate(periodDays, today())}`);
     }
 
-    function updateHabit(id, name, emoji, goal, color, periodDays, reminderTime) {
+    function updateHabit(id, name, emoji, color, periodDays, reminderTime) {
         const habit = habits.find(h => h.id === id);
         if (!habit) return;
         habit.name = name;
         habit.emoji = emoji;
-        habit.goal = goal;
         habit.color = color;
         habit.periodDays = periodDays;
         habit.reminderTime = reminderTime || null;
@@ -1271,7 +1263,6 @@
             p.periodDays = Math.min(Math.max(parseInt(p.periodDays, 10) || DEFAULT_PERIOD, 1), 365);
             if (!Array.isArray(p.items)) p.items = [];
             p.items.forEach(it => {
-                it.goal = Math.min(Math.max(parseInt(it.goal, 10) || 1, 1), 100);
                 it.periodDays = Math.min(Math.max(parseInt(it.periodDays, 10) || DEFAULT_PERIOD, 1), 365);
                 if (!it.emoji) it.emoji = '📝';
                 if (!it.id) it.id = generateId();
@@ -1300,7 +1291,7 @@
     }
 
     function isPlanItemDone(plan, item, date) {
-        return getPlanItemCount(plan, item.id, date) >= item.goal;
+        return getPlanItemCount(plan, item.id, date) > 0;
     }
 
     // Универсальный доступ к выполнению: для плана (container=plan, item=item),
@@ -1313,7 +1304,7 @@
     }
 
     function isItemDayDone(container, item, date) {
-        return getCompletionCount(container, item, date) >= item.goal;
+        return getCompletionCount(container, item, date) > 0;
     }
 
     // Полностью выполненные дни задачи плана (для «Всего выполнено»).
@@ -1347,7 +1338,7 @@
         if (!item) return;
         if (!plan.completions[dateStr]) plan.completions[dateStr] = {};
         const cur = plan.completions[dateStr][itemId] || 0;
-        plan.completions[dateStr][itemId] = cur >= item.goal ? 0 : cur + 1;
+        plan.completions[dateStr][itemId] = cur > 0 ? 0 : 1;
     }
 
     function togglePlanItem(plan, itemId) {
@@ -1553,7 +1544,6 @@
             $('#itemForm').reset();
             $('#itemPlanId').value = planId;
             $('#itemName').value = item.name;
-            $('#itemGoal').value = item.goal;
 
             const hasPreset = Array.from($$('.i-emoji-btn'))
                 .some(b => emojiKey(b.dataset.emoji) === emojiKey(item.emoji));
@@ -1652,23 +1642,22 @@
         showToast('План удалён');
     }
 
-    function addPlanItem(planId, name, emoji, goal, periodDays) {
+    function addPlanItem(planId, name, emoji, periodDays) {
         const plan = plans.find(p => p.id === planId);
         if (!plan) return;
-        plan.items.push({ id: generateId(), name, emoji, goal, periodDays });
+        plan.items.push({ id: generateId(), name, emoji, periodDays });
         savePlans();
         refreshAll();
         showToast('Задача добавлена в план');
     }
 
-    function updatePlanItem(planId, itemId, name, emoji, goal, periodDays) {
+    function updatePlanItem(planId, itemId, name, emoji, periodDays) {
         const plan = plans.find(p => p.id === planId);
         if (!plan) return;
         const item = plan.items.find(i => i.id === itemId);
         if (!item) return;
         item.name = name;
         item.emoji = emoji;
-        item.goal = goal;
         item.periodDays = periodDays;
         savePlans();
         refreshAll();
@@ -1909,7 +1898,6 @@
             title.textContent = 'Редактировать задачу';
             submitBtn.textContent = 'Сохранить';
             $('#habitName').value = habit.name;
-            $('#habitGoal').value = habit.goal;
             $('#habitId').value = habit.id;
 
             const presetBtns = $$('.emoji-btn');
@@ -1963,7 +1951,9 @@
 
     function buildPlanRow(container, item, t) {
         const start = container.startDate;
-        const end = endDateOf(container);
+        const end = Array.isArray(container.items)
+            ? addDays(start, Math.min(Math.max(parseInt(item.periodDays, 10) || DEFAULT_PERIOD, 1), 365) - 1)
+            : endDateOf(container);
         const color = container.color;
 
         let doneDays = 0;
@@ -1991,13 +1981,9 @@
             cell.type = 'button';
             cell.className = 'plan-cell';
 
-            const ratio = item.goal > 0 ? count / item.goal : 0;
-            if (ratio >= 1) {
+            if (count > 0) {
                 cell.classList.add('done');
                 cell.style.background = color;
-            } else if (ratio > 0) {
-                cell.classList.add('partial');
-                cell.style.background = color + '55';
             }
 
             if (d === t) cell.classList.add('today');
@@ -2005,7 +1991,7 @@
             if (i % 7 === 6) cell.classList.add('week-end');
 
             cell.textContent = parseInt(d.slice(8, 10), 10);
-            cell.title = `${formatShort(d)} — ${count}/${item.goal}`;
+            cell.title = `${formatShort(d)} — ${count > 0 ? '✓' : '—'}`;
 
             cell.addEventListener('click', () => {
                 const wasDone = isItemDayDone(container, item, d);
@@ -2370,14 +2356,13 @@
                 return;
             }
             const emoji = getSelectedItemEmoji();
-            const goal = Math.min(Math.max(parseInt($('#itemGoal').value, 10) || 1, 1), 100);
             const periodDays = Math.min(Math.max(
                 parseInt($('#itemPeriodDays').value, 10) || DEFAULT_PERIOD, 1, 365
             ), 365);
             if (editingItemId) {
-                updatePlanItem($('#itemPlanId').value, editingItemId, name, emoji, goal, periodDays);
+                updatePlanItem($('#itemPlanId').value, editingItemId, name, emoji, periodDays);
             } else {
-                addPlanItem($('#itemPlanId').value, name, emoji, goal, periodDays);
+                addPlanItem($('#itemPlanId').value, name, emoji, periodDays);
             }
             closeItemModal();
         });
@@ -2402,23 +2387,6 @@
         $('#historyOverlay').addEventListener('click', (e) => {
             if (e.target === e.currentTarget) closeHistoryModal();
         });
-
-        // Dev-only: DEV-кнопка видна только на дев-билде (veyo-tracker-dev / ?dev)
-        const devBtn = $('#devClearBtn');
-        if (devBtn) {
-            const isDevBuild = location.hostname.indexOf('veyo-tracker-dev') !== -1 || /[?&]dev(?:=1)?(&|$)/.test(location.search);
-            if (isDevBuild) {
-                devBtn.hidden = false;
-                devBtn.addEventListener('click', async () => {
-                    const ok = await showConfirm('Dev: полностью очистить все данные? Задачи, планы, история и счётчики будут удалены.');
-                    if (!ok) return;
-                    localStorage.clear();
-                    location.reload();
-                });
-            } else {
-                devBtn.remove();
-            }
-        }
 
         // Обработчики периода (логика вынесена в scope IIFE — setPeriod и т.д.)
         const periodSlider = $('#periodSlider');
@@ -2560,7 +2528,6 @@
             const name = $('#habitName').value.trim();
             const emoji = getSelectedEmoji();
             const color = $('.color-btn.selected')?.dataset.color || '#22a2f0';
-            const goal = Math.min(Math.max(parseInt($('#habitGoal').value, 10) || 1, 1), 100);
             const periodDays = $('#habitNoPeriod').checked
                 ? null
                 : Math.min(Math.max(parseInt($('#habitPeriod').value, 10) || DEFAULT_PERIOD, 1, 365), 365);
@@ -2571,12 +2538,10 @@
                 return;
             }
 
-            $('#habitGoal').value = goal;
-
             if (editingId) {
-                updateHabit(editingId, name, emoji, goal, color, periodDays, reminderTimeCurrent);
+                updateHabit(editingId, name, emoji, color, periodDays, reminderTimeCurrent);
             } else {
-                addHabit(name, emoji, goal, color, periodDays, reminderTimeCurrent);
+                addHabit(name, emoji, color, periodDays, reminderTimeCurrent);
             }
 
             closeModal();
