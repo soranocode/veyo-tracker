@@ -74,8 +74,9 @@ Mini App (telegram/, CF Pages)                Cloudflare Worker "veyo-reminders"
 - Бот «только плашка»: молчит на сообщения, отвечает только действиями (кнопка)
 
 ### 4. Мини-апп (территория кодера; критические правки делает бот-агент по команде пользователя)
-Актуальная версия на Pages dev: **v8** (03.09, коммит 60a793f). Что важно знать:
-- **Кросс-девайс синк**: вариант A — Telegram CloudStorage (`v1.<localKey>#<n>`, куски ≤3500 байт) НЕ работает в Telegram Desktop (нет CloudStorage) → 09.09 внедряется вариант B (серверный синк через worker `/api/data` + `snap:<id>`). Статус: worker v3 готов и протестирован; мини-апп (замена слоя на сетевой) — шаг 2 в работе.
+Актуальная версия на Pages dev: **v9** (09.09, коммит 9558ff3) — серверный синк (вариант B). Что важно знать:
+- **Кросс-девайс синк (v9)**: CloudStorage-слой (v1.*) УДАЛЁН и заменён на зеркало в worker: при старте init() рендерит UI сразу из localStorage (кеш), затем cloudBoot() тянет `GET /api/data` и применяет, если сервер новее; после save/saveStats/saveSettings/saveHistory/savePlans/toggleTheme — cloudQueue() → `POST /api/data` (debounce 1.5с). Конфликт: last-write-wins по `updatedAt` (localStorage `habit-tracker-sync`). Вне TG — чисто локально.
+- ⚠️ КОДЕР (opencode): слой синка — зона бот-агента, CloudStorage НЕ возвращать; пометки в шапке секции app.js, AGENTS.md, index.html.
 - sync шлёт `leadMin`, `color`, `goal`, `doneToday`; задачи без эмодзи — `emoji: ''` (фолбэк «🔔» был багом кодера, исправлен; НЕ возвращать).
 - fetchState() вызывается в init (кнопка «Выполнено» → мерж в приложение).
 - Дефолт настройки lead = 30 (кодер дважды откатывал на 0 — следить!).
@@ -97,6 +98,14 @@ cd telegram; wrangler pages deploy . --project-name veyo-tracker-dev --branch ma
 - Pages: `veyo-tracker-dev` (DEV live), `veyo-tracker` (PROD не задеплоен)
 - Worker: `veyo-reminders`; KV: `VEYO_KV` `fe5149d08148451190642c7dd75eee6c`
 - С ПК `*.pages.dev` не открыть (SNI-фильтр сети) — проверять с телефона; `*.workers.dev` открывается
+
+## Статус (09.09, v9 мини-апп + worker v3)
+✅ Worker v3 `/api/data` + валидация initData: задеплоен (d488c742), тесты API прошли
+✅ Мини-апп v9: слой синка заменён на сетевой, деплой Pages dev (9558ff3), live проверен (`app.js?v=9`)
+⬜ E2E-тест пользователем (телефон ↔ Telegram Desktop, один аккаунт):
+   1. телефон: добавить задачу → Desktop: открыть мини-апп → задача видна (дать серверу ~2-5с на запись)
+   2. Desktop: отметить выполнение → телефон: переоткрыть → выполнено
+   3. напоминания не сломались: бот по-прежнему шлёт warn/due на задачу с временем
 
 ## Статус теста (09.09, worker v3 /api/data)
 ✅ 401: без initData / битая подпись / auth_date старше 48ч
