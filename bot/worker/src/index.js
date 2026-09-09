@@ -3,9 +3,12 @@
 //   1) Предупреждение за leadMin минут до времени задачи (текст, без кнопок)
 //   2) Уведомление ровно в время задачи (текст + кнопка «Выполнено»)
 // Формат сообщения: {эмодзи|цветной кружок} {название} — {время задачи}
+// v3 (2026-09-09): серверная синхронизация данных мини-аппа (вариант B) — /api/data + валидация initData.
 // Эндпоинты:
 //   POST /api/sync    — мини-апп: { user_id, tz, leadMin, tasks: [{id,name,emoji,color,reminderTime,active,goal,doneToday}] }
 //   GET  /api/state   — мини-апп: ?user_id= -> отметки «выполнено» из бота { done: { <taskId>: ["YYYY-MM-DD", ...] } }
+//   GET  /api/data    — мини-апп: ?initData=<сырой tg.initData> -> { ok, updatedAt:<ms|null>, data:<строка|null> } (снимок состояния)
+//   POST /api/data    — мини-апп: { initData, updatedAt:<ms>, data:"<json строкой>" } — last-write-wins (updatedAt > snap.updatedAt)
 //   POST /webhook     — Telegram updates: сообщения (копируем chat_id) + callback_query (кнопка «Выполнено»)
 //   cron (каждую минуту) — доставка
 // KV:
@@ -14,6 +17,9 @@
 //   done:<tg_user_id>:<date>:<taskId> -> '1' (выполнено из бота; TTL 7 дней — /api/state отдаёт эти дни)
 //   sent:<tg_user_id>:<date>:<taskId>:<warn|due> -> '1' (защита от дублей; TTL 2 дня)
 //   warnmsg:<tg_user_id>:<taskId> -> message_id предупреждения (удаляем при уведомлении; TTL 3 дня)
+//   snap:<tg_user_id>                 -> { updatedAt:<ms>, data:"<полный JSON состояния приложения строкой>" } (зеркало для синка; без TTL)
+// TODO (безопасность, обратная совместимость): /api/sync и /api/state пока принимают user_id без проверки —
+//   добавить валидацию initData по аналогии с /api/data, когда мини-апп начнёт слать initData (v9+).
 
 const CORS = {
   'Access-Control-Allow-Origin': '*',
@@ -415,6 +421,114 @@ async function markSent(env, userId, date, taskId, kind) {
   await env.VEYO_KV.put(`sent:${userId}:${date}:${taskId}:${kind}`, '1', { expirationTtl: SENT_TTL_SEC });
 }
 
+// ===================== Серверная синхронизация (вариант B) =====================
+// /api/data — «тупое зеркало» состояния мини-аппа в KV snap:<user_id>.
+// Авторизация: подпись tg.initData (алгоритм Telegram), user_id берём из initData — не из тела запроса.
+
+const MAX_DATA_CHARS = 2_000_000; // данные мини-аппа на порядки меньше; KV лимит 25 MiB
+const INITDATA_MAX_AGE_SEC = 48 * 3600; // initData старше 48ч не принимаем (защита от реплеев)
+
+function bytesToHex(bytes) {
+  return Array.from(bytes).map((b) => b.toString(16).padStart(2, '0')).join('');
+}
+
+function safeEqual(a, b) {
+  if (typeof a !== 'string' || typeof b !== 'string' || a.length !== b.length) return false;
+  let diff = 0;
+  for (let i = 0; i < a.length; i++) diff |= a.charCodeAt(i) ^ b.charCodeAt(i);
+  return diff === 0;
+}
+
+async function hmacSha256(keyBytes, dataBytes) {
+  const key = await crypto.subtle.importKey('raw', keyBytes, { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']);
+  const sig = await crypto.subtle.sign('HMAC', key, dataBytes);
+  return new Uint8Array(sig);
+}
+
+// Проверяем подпись initData (https://core.telegram.org/bots/webapps#validating-data-received-via-the-mini-app):
+//   secret_key = HMAC_SHA256(key="WebAppData", data=BOT_TOKEN)   (сырые байты — ключ для шага ниже)
+//   check_string = отсортированные по ключу пары key=value (кроме hash), join "\n"
+//   hash = HMAC_SHA256(key=secret_key, data=check_string) (hex)
+// Возвращает { userId } или null.
+async function validateInitData(initData, botToken) {
+  try {
+    if (!initData || !botToken) return null;
+    const params = new URLSearchParams(initData);
+    const hash = params.get('hash');
+    if (!hash) return null;
+    const pairs = [];
+    for (const [k, v] of params) if (k !== 'hash') pairs.push([k, v]);
+    pairs.sort((a, b) => (a[0] < b[0] ? -1 : a[0] > b[0] ? 1 : 0));
+    const checkString = pairs.map((p) => `${p[0]}=${p[1]}`).join('\n');
+
+    const te = new TextEncoder();
+    const secretKey = await hmacSha256(te.encode('WebAppData'), te.encode(botToken));
+    const calcHash = bytesToHex(await hmacSha256(secretKey, te.encode(checkString)));
+    if (!safeEqual(calcHash, hash)) return null;
+
+    const authDate = parseInt(params.get('auth_date'), 10);
+    if (!Number.isFinite(authDate)) return null;
+    if (Date.now() / 1000 - authDate > INITDATA_MAX_AGE_SEC) return null;
+
+    const userRaw = params.get('user');
+    if (!userRaw) return null;
+    const user = JSON.parse(userRaw);
+    if (!user || !user.id) return null;
+    return { userId: String(user.id) };
+  } catch {
+    return null;
+  }
+}
+
+// GET /api/data?initData=... -> { ok, updatedAt:<ms|null>, data:<строка|null> }
+async function handleDataGet(request, env, url) {
+  try {
+    const auth = await validateInitData(url.searchParams.get('initData') || '', env.BOT_TOKEN);
+    if (!auth) return json({ ok: false, error: 'unauthorized' }, 401);
+    const raw = await env.VEYO_KV.get(`snap:${auth.userId}`);
+    if (!raw) return json({ ok: true, updatedAt: null, data: null });
+    try {
+      const parsed = JSON.parse(raw);
+      return json({ ok: true, updatedAt: parsed.updatedAt ?? null, data: parsed.data ?? null });
+    } catch {
+      return json({ ok: true, updatedAt: null, data: null });
+    }
+  } catch (err) {
+    return json({ ok: false, error: String((err && err.message) || err) }, 500);
+  }
+}
+
+// POST /api/data { initData, updatedAt:<ms>, data:"<строка>" } — last-write-wins
+async function handleDataPost(request, env) {
+  try {
+    const body = await request.json();
+    const auth = await validateInitData((body && body.initData) || '', env.BOT_TOKEN);
+    if (!auth) return json({ ok: false, error: 'unauthorized' }, 401);
+
+    const updatedAt = body && body.updatedAt;
+    const data = body && body.data;
+    if (typeof updatedAt !== 'number' || !Number.isFinite(updatedAt) || updatedAt <= 0) {
+      return json({ ok: false, error: 'invalid updatedAt' }, 400);
+    }
+    if (typeof data !== 'string') return json({ ok: false, error: 'invalid data' }, 400);
+    if (data.length > MAX_DATA_CHARS) return json({ ok: false, error: 'data too large' }, 413);
+
+    const snapKey = `snap:${auth.userId}`;
+    let serverUpdatedAt = 0;
+    const raw = await env.VEYO_KV.get(snapKey);
+    if (raw) {
+      try { serverUpdatedAt = JSON.parse(raw).updatedAt || 0; } catch { /* битый снап — перезапишем */ }
+    }
+    if (updatedAt <= serverUpdatedAt) {
+      return json({ ok: true, saved: false, serverUpdatedAt }); // клиент пересинхронизируется
+    }
+    await env.VEYO_KV.put(snapKey, JSON.stringify({ updatedAt, data }));
+    return json({ ok: true, saved: true, serverUpdatedAt: updatedAt });
+  } catch (err) {
+    return json({ ok: false, error: String((err && err.message) || err) }, 500);
+  }
+}
+
 export default {
   async fetch(request, env) {
     const url = new URL(request.url);
@@ -427,11 +541,17 @@ export default {
     if (url.pathname === '/api/state' && request.method === 'GET') {
       return handleState(request, env, url);
     }
+    if (url.pathname === '/api/data' && request.method === 'GET') {
+      return handleDataGet(request, env, url);
+    }
+    if (url.pathname === '/api/data' && request.method === 'POST') {
+      return handleDataPost(request, env);
+    }
     if (url.pathname === '/webhook' && request.method === 'POST') {
       return handleWebhook(request, env);
     }
     if (url.pathname === '/') {
-      return json({ ok: true, service: 'veyo-reminders', version: 2 });
+      return json({ ok: true, service: 'veyo-reminders', version: 3 });
     }
     return json({ ok: false, error: 'not found' }, 404);
   },

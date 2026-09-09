@@ -2,7 +2,7 @@
 
 > **ТЕРРИТОРИЯ БОТ-АГЕНТА (OpenClaw).** Этот каталог закреплён за бот-агентом — другие агенты (в т.ч. кодер фронта) НЕ редактируют `bot/` без явной команды пользователя. Веб-файлы (корень репо, `telegram/`, `android/`) — территория кодера; правки UI синхронизируются по процедуре из корневого `AGENTS.md`.
 
-Статус: **работает (v2.1)**. Обновлено: 03.09.2026 ~17:30 (GMT+4). Последние деплои 03.09: worker `c72795c1` (15:54), Pages dev v8 (17:15).
+Статус: **работает (v3)**. Обновлено: 09.09.2026 ~17:00 (GMT+4). Деплои: worker v3 (09.09, version id `d488c742`) — серверная синхронизация /api/data + валидация initData; Pages dev v8 (03.09 17:15).
 
 ---
 
@@ -31,8 +31,9 @@ Mini App (telegram/, CF Pages)                Cloudflare Worker "veyo-reminders"
 │ save() → syncReminders…() │ ───────────────▶ │ fetch:                             │ ──────────▶ │@veyo_…  │
 │ init → cloudBoot + fetch… │  {user_id,tz,    │  /api/sync  → KV user:<id>         │  deleteMessage│        │
 └────────────────────────────┘   leadMin,tasks}│  /api/state → отметки done (7 дн) │  editMessage └─────────┘
+                                               │  /api/data  → KV snap:<id> (v3)    │
                                                │  /webhook   → chat:<id>; кнопка    │
-                                               │  /          → ping {version:2}     │
+                                               │  /          → ping {version:3}     │
                                                │  cron * * * * *:                   │
                                                │   warn = reminderTime − leadMin    │
                                                │   due  = reminderTime (кнопка)     │
@@ -51,7 +52,9 @@ Mini App (telegram/, CF Pages)                Cloudflare Worker "veyo-reminders"
 | `POST /api/sync` | Mini App: `{user_id, tz, leadMin, tasks:[{id,name,emoji,color,reminderTime,active,goal,doneToday}]}` → `user:<id>` = `{tz, leadMin, tasks:[…+doneDate], updatedAt}`. В KV сохраняются только задачи с `reminderTime`. `doneDate` = дата снимка в tz — вчерашний `doneToday` не блокирует сегодняшнее напоминание. |
 | `GET /api/state?user_id=` | `{ok, done:{<taskId>:[даты]}, tasks:[{id, doneToday}]}` — done-отметки бота за 7 дней. Форму `tasks[].doneToday` читает мини-апп (мерж). |
 | `POST /webhook` | message → `chat:<from.id>` = chat_id; `callback_query` data=`done:<taskId>` → отметка done + editMessageText. |
-| `GET /` | ping `{ok, service, version:2}` |
+| `GET /api/data?initData=` | (v3, серверная синхронизация) `{ok, updatedAt:<ms|null>, data:<строка|null>}` — снимок состояния мини-аппа из `snap:<user_id>`. Валидация initData: без подписи/с битой подписью/старше 48ч → 401. |
+| `POST /api/data` | body `{initData, updatedAt:<ms>, data:"<json строкой>"}` — «тупое зеркало», last-write-wins: принимается только при `updatedAt > snap.updatedAt`; иначе `{saved:false, serverUpdatedAt}` (клиент пересинхронизируется). Лимит data: 2М символов. user_id берётся ИЗ initData, не из тела. |
+| `GET /` | ping `{ok, service, version:3}` |
 | cron `* * * * *` | см. схему событий выше. Защита от дублей: `sent:<user>:<дата>:<taskId>:<warn|due>` TTL 2д. `warnmsg:<user>:<taskId>` = message_id предупреждения (TTL 3д) → удаляется при due. Пагинация по cursor (страницы по 1000). |
 
 ### 2. KV namespace `VEYO_KV` (id `fe5149d08148451190642c7dd75eee6c`)
@@ -60,6 +63,7 @@ Mini App (telegram/, CF Pages)                Cloudflare Worker "veyo-reminders"
 - `done:<tg_user_id>:<YYYY-MM-DD>:<taskId>` → `1` (TTL 7д; источник для /api/state и крона)
 - `sent:<tg_user_id>:<YYYY-MM-DD>:<taskId>:<warn|due>` → `1` (TTL 2д)
 - `warnmsg:<tg_user_id>:<taskId>` → message_id предупреждения (TTL 3д)
+- `snap:<tg_user_id>` → `{updatedAt:<ms>, data:"<полный JSON состояния приложения строкой>"}` (v3, без TTL; зеркало для серверного синка — вариант B)
 
 **ВАЖНО:** `wrangler kv key list|get` на машине пользователя ВРЁТ (пусто). Проверять через Cloudflare API:
 `GET /client/v4/accounts/{account_id}/storage/kv/namespaces/{ns}/keys` (Bearer <oauth_token из `C:\Users\user\.wrangler\config\default.toml`). OAuth-токен протухает (~2ч) — перевыпуск: `wrangler whoami`.
@@ -71,7 +75,7 @@ Mini App (telegram/, CF Pages)                Cloudflare Worker "veyo-reminders"
 
 ### 4. Мини-апп (территория кодера; критические правки делает бот-агент по команде пользователя)
 Актуальная версия на Pages dev: **v8** (03.09, коммит 60a793f). Что важно знать:
-- **Кросс-девайс синк**: данные дублируются в Telegram CloudStorage (`v1.<localKey>#<n>`, куски ≤3500 байт). cloudBoot() при старте: pull облако→localStorage, потом init(); push после каждого save с дебаунсом 0.6с. Вне TG — локально. Конфликт: «последний пишет»; облако побеждает при старте.
+- **Кросс-девайс синк**: вариант A — Telegram CloudStorage (`v1.<localKey>#<n>`, куски ≤3500 байт) НЕ работает в Telegram Desktop (нет CloudStorage) → 09.09 внедряется вариант B (серверный синк через worker `/api/data` + `snap:<id>`). Статус: worker v3 готов и протестирован; мини-апп (замена слоя на сетевой) — шаг 2 в работе.
 - sync шлёт `leadMin`, `color`, `goal`, `doneToday`; задачи без эмодзи — `emoji: ''` (фолбэк «🔔» был багом кодера, исправлен; НЕ возвращать).
 - fetchState() вызывается в init (кнопка «Выполнено» → мерж в приложение).
 - Дефолт настройки lead = 30 (кодер дважды откатывал на 0 — следить!).
@@ -94,6 +98,12 @@ cd telegram; wrangler pages deploy . --project-name veyo-tracker-dev --branch ma
 - Worker: `veyo-reminders`; KV: `VEYO_KV` `fe5149d08148451190642c7dd75eee6c`
 - С ПК `*.pages.dev` не открыть (SNI-фильтр сети) — проверять с телефона; `*.workers.dev` открывается
 
+## Статус теста (09.09, worker v3 /api/data)
+✅ 401: без initData / битая подпись / auth_date старше 48ч
+✅ POST→GET: снимок сохраняется и читается (валидная подпись)
+✅ LWW: запись со старым updatedAt отклоняется (`saved:false`), с новым — принимается
+✅ Событийная консистентность KV: при паузах 2–4с (реальный темп) расхождений нет; мгновенные запросы подряд (мс) могут читать устаревшую реплику — для одного юзера некритично
+
 ## Статус теста (03.09)
 ✅ sync/state/webhook/кнопка-колбэк: код live, ping version 2
 ✅ Доставка подтверждена пользователем вживую (бот написал 14:56; задача Freebuff)
@@ -104,4 +114,5 @@ cd telegram; wrangler pages deploy . --project-name veyo-tracker-dev --branch ma
 - goal > 1: механика кнопки «Выполнено» не решена (сейчас кнопка только при goal=1)
 - 100+ пользователей: лимиты бесплатного KV (крон раз в минуту делает list+чтения на всех; при массовом использовании — переделка: планирование к точным минутам вместо сканирования)
 - PROD-мини-апп не задеплоен; при появлении — решить разделение KV между DEV/PROD
-- VK-версия: CloudStorage работает только в Telegram → для VK нужен бэкенд-синк (вариант B) — напомнить пользователю при старте VK
+- VK-версия: CloudStorage работает только в Telegram → для VK нужен бэкенд-синк (вариант B) — worker-часть (v3) готова, при старте VK переиспользовать /api/data
+- /api/sync и /api/state принимают user_id без проверки (TODO в коде): добавить валидацию initData, когда мини-апп начнёт слать initData (v9+)
