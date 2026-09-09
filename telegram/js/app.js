@@ -2629,149 +2629,160 @@
         }
     }
 
-    // ===================== Облачная синхронизация (Telegram CloudStorage) =====================
-    // localStorage живёт на устройстве -> телефон и ПК одного аккаунта расходились.
-    // Дублируем ключи в Telegram CloudStorage (облако TG, изолировано по пользователям):
-    //   pull при старте (облако -> localStorage), push после каждого сохранения (debounce).
-    // Значения больше CLOUD_CHUNK_BYTES режем на куски 'v1.<localKey>#<n>' (склейка точная).
-    // Ограничения TG: <=4096 байт на значение, всего ~1024KB на юзера — запас большой.
-    const CLOUD_PREFIX = 'v1.';
-    const CLOUD_CHUNK_BYTES = 3500;
-    const CLOUD_LOCAL_KEYS = [STORAGE_KEY, THEME_KEY, PLANS_KEY, LIFETIME_KEY, HISTORY_KEY, SETTINGS_KEY, STATS_KEY];
-    let cloudAvailable = false;
-    let cloudChunkKeys = new Set();
-    const cloudPending = new Set();
-    let cloudTimer = null;
-    let cloudFlushChain = Promise.resolve();
+        // ===================== Серверная синхронизация (вариант B, v9) =====================
+    // ⚠️⚠️ КОДЕР (opencode/rragulin): ЭТОТ СЛОЙ НЕ УДАЛЯТЬ И НЕ ВОЗВРАЩАТЬ CloudStorage!
+    // Заменён бот-агентом 09.09.2026 (шаг 2 варианта B, по команде пользователя). Причина:
+    // Telegram CloudStorage (вариант A, ключи v1.*) НЕ работает в Telegram Desktop -> на каждом
+    // устройстве был пустой кеш. Теперь данные зеркалятся на worker (/api/data, KV snap:<user_id>)
+    // и работают из любого клиента. Конфликт: last-write-wins по updatedAt (клиентские часы).
+    // Перед удалением/переделкой — согласуй с пользователем (это его явный заказ).
+    const DATA_ENDPOINT = 'https://veyo-reminders.okhotinandrei5.workers.dev/api/data';
+    const SYNC_LOCAL_KEYS = [STORAGE_KEY, THEME_KEY, PLANS_KEY, LIFETIME_KEY, HISTORY_KEY, SETTINGS_KEY, STATS_KEY];
+    const SYNC_META_KEY = 'habit-tracker-sync'; // { updatedAt: <ms> } — когда локально меняли в последний раз
+    const SYNC_PUSH_DEBOUNCE_MS = 1500;
+    const SYNC_FETCH_TIMEOUT_MS = 4000;
+    let syncTimer = null;
+    let syncFlushing = false;
+    let syncDirty = false;
 
-    function cloudStore() {
+    function syncUser() {
+        const u = tg && tg.initDataUnsafe && tg.initDataUnsafe.user;
+        return (u && u.id && tg.initData) ? { id: String(u.id), initData: tg.initData } : null;
+    }
+
+    function readSyncMeta() {
         try {
-            return (window.Telegram && window.Telegram.WebApp && window.Telegram.WebApp.CloudStorage)
-                ? window.Telegram.WebApp.CloudStorage : null;
-        } catch { return null; }
+            const raw = localStorage.getItem(SYNC_META_KEY);
+            if (!raw) return { updatedAt: 0 };
+            const p = JSON.parse(raw);
+            return { updatedAt: (typeof p.updatedAt === 'number' && p.updatedAt) || 0 };
+        } catch { return { updatedAt: 0 }; }
     }
 
-    function cloudCall(method, ...args) {
-        return new Promise((resolve) => {
-            try {
-                const cs = cloudStore();
-                if (!cs || !cs[method]) return resolve(null);
-                cs[method](...args, (err, res) => resolve(err ? null : res));
-            } catch { resolve(null); }
+    function writeSyncMeta(updatedAt) {
+        try { localStorage.setItem(SYNC_META_KEY, JSON.stringify({ updatedAt })); } catch {}
+    }
+
+    function hasAnyLocalData() {
+        return SYNC_LOCAL_KEYS.some(k => localStorage.getItem(k) !== null);
+    }
+
+    // все ключи состояния одним объектом { key: value } (сервер хранит как строку — «тупое зеркало»)
+    function collectLocalData() {
+        const out = {};
+        SYNC_LOCAL_KEYS.forEach(k => {
+            const v = localStorage.getItem(k);
+            if (v !== null) out[k] = v;
         });
+        return JSON.stringify(out);
     }
 
-    async function cloudGetKeys() { return (await cloudCall('getKeys')) || []; }
-    async function cloudGetItem(key) { return await cloudCall('getItem', key); }
-    async function cloudSetItem(key, value) { await cloudCall('setItem', key, value); }
-    async function cloudRemoveItem(key) { await cloudCall('removeItem', key); }
-
-    function utf8Bytes(s) { try { return new TextEncoder().encode(s).length; } catch { return s.length; } }
-
-    function chunkValue(value) {
-        const chunks = [];
-        let cur = '';
-        for (const ch of value) {
-            if (cur && utf8Bytes(cur + ch) > CLOUD_CHUNK_BYTES) { chunks.push(cur); cur = ch; }
-            else cur += ch;
-        }
-        if (cur) chunks.push(cur);
-        return chunks.length ? chunks : [''];
+    // серверные данные -> localStorage (возвращает true, если применилось)
+    function applyServerData(dataStr) {
+        try {
+            const obj = JSON.parse(dataStr);
+            if (!obj || typeof obj !== 'object') return false;
+            Object.keys(obj).forEach(k => {
+                try { localStorage.setItem(k, String(obj[k])); } catch {}
+            });
+            return true;
+        } catch { return false; }
     }
 
-    async function cloudPushKey(localKey) {
-        const value = localStorage.getItem(localKey);
-        if (value === null) return;
-        const chunks = chunkValue(value);
-        const prefix = CLOUD_PREFIX + localKey + '#';
-        const newKeys = chunks.map((c, i) => prefix + i);
-        const known = Array.from(cloudChunkKeys).filter(k => k.startsWith(prefix));
-        for (const k of known) {
-            if (!newKeys.includes(k)) { await cloudRemoveItem(k); cloudChunkKeys.delete(k); }
-        }
-        for (let i = 0; i < chunks.length; i++) {
-            const k = prefix + i;
-            if (known.includes(k)) {
-                const cur = await cloudGetItem(k);
-                if (cur === chunks[i]) { cloudChunkKeys.add(k); continue; } // не изменился — не пишем
+    // после применения серверных данных перечитываем localStorage и перерисовываем UI
+    function reRenderAfterSync() {
+        try {
+            load();
+            loadLifetime();
+            loadPlans();
+            loadStats();
+            loadHistory();
+            loadSettings();
+            renderHabits();
+            renderPlan();
+        } catch {}
+    }
+
+    async function fetchJson(url, options, timeoutMs) {
+        const ctrl = new AbortController();
+        const t = setTimeout(() => ctrl.abort(), timeoutMs);
+        try {
+            const resp = await fetch(url, Object.assign({}, options, { signal: ctrl.signal }));
+            if (!resp.ok) return null;
+            return await resp.json();
+        } catch { return null; } finally { clearTimeout(t); }
+    }
+
+    // pull при старте: сервер новее -> применяем; локально новее -> пушим; сервер пуст + локально есть -> миграция
+    async function syncPull() {
+        const user = syncUser();
+        if (!user) return;
+        const res = await fetchJson(DATA_ENDPOINT + '?initData=' + encodeURIComponent(user.initData), { method: 'GET' }, SYNC_FETCH_TIMEOUT_MS);
+        if (!res || res.ok !== true) return; // вне сети / бэкенд недоступен — остаёмся на локальном кеше
+        const localUpdatedAt = readSyncMeta().updatedAt;
+        const serverUpdatedAt = (typeof res.updatedAt === 'number' && res.updatedAt) || 0;
+
+        if (!serverUpdatedAt) {
+            if (hasAnyLocalData()) { // локальные данные впервые -> заливаем на сервер
+                writeSyncMeta(Date.now());
+                scheduleSyncFlush(300);
             }
-            await cloudSetItem(k, chunks[i]);
-            cloudChunkKeys.add(k);
+            return;
+        }
+        if (serverUpdatedAt > localUpdatedAt) {
+            if (applyServerData(res.data)) {
+                writeSyncMeta(serverUpdatedAt);
+                reRenderAfterSync();
+            }
+        } else if (serverUpdatedAt < localUpdatedAt) {
+            scheduleSyncFlush(0); // локально новее — пушим
+        }
+        // equal — уже синхронизировано
+    }
+
+    // вызывается из save/saveStats/saveSettings/saveHistory/savePlans/toggleTheme (см. cloudQueue(ключ) выше)
+    function cloudQueue() {
+        if (!syncUser()) return; // вне Telegram — чисто локально
+        writeSyncMeta(Date.now()); // метка момента локального изменения (для LWW)
+        scheduleSyncFlush(SYNC_PUSH_DEBOUNCE_MS);
+    }
+
+    function scheduleSyncFlush(delayMs) {
+        if (syncTimer) clearTimeout(syncTimer);
+        syncTimer = setTimeout(syncFlush, delayMs);
+    }
+
+    async function syncFlush() {
+        syncTimer = null;
+        if (syncFlushing) { syncDirty = true; return; }
+        const user = syncUser();
+        if (!user) return;
+        syncFlushing = true;
+        try {
+            const updatedAt = readSyncMeta().updatedAt || Date.now();
+            const res = await fetchJson(DATA_ENDPOINT, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ initData: user.initData, updatedAt: updatedAt, data: collectLocalData() })
+            }, SYNC_FETCH_TIMEOUT_MS);
+            if (res && res.ok === true && res.saved === false) {
+                // сервер новее (писали с другого устройства) -> пересинхронизация
+                await syncPull();
+            }
+        } catch {} finally {
+            syncFlushing = false;
+            if (syncDirty) { syncDirty = false; scheduleSyncFlush(300); }
         }
     }
-
-    // облако -> localStorage. Возвращает true, если в облаке были данные
-    async function cloudPull() {
-        const keys = await cloudGetKeys();
-        const byLocal = {};
-        keys.forEach(k => {
-            if (!k.startsWith(CLOUD_PREFIX)) return;
-            const rest = k.slice(CLOUD_PREFIX.length);
-            const hashIdx = rest.indexOf('#');
-            if (hashIdx < 0) return;
-            const localKey = rest.slice(0, hashIdx);
-            const idx = parseInt(rest.slice(hashIdx + 1), 10);
-            if (!Number.isFinite(idx)) return;
-            (byLocal[localKey] = byLocal[localKey] || {})[idx] = k;
-            cloudChunkKeys.add(k);
-        });
-        let any = false;
-        for (const localKey of Object.keys(byLocal)) {
-            const idxMap = byLocal[localKey];
-            const maxIdx = Math.max(...Object.keys(idxMap).map(Number));
-            let value = '';
-            let ok = true;
-            for (let i = 0; i <= maxIdx; i++) {
-                const k = idxMap[i];
-                if (!k) { ok = false; break; }
-                const v = await cloudGetItem(k);
-                if (v === null) { ok = false; break; }
-                value += v;
-            }
-            if (!ok) continue;
-            localStorage.setItem(localKey, value);
-            any = true;
-        }
-        return any;
-    }
-
-    function cloudQueue(localKey) {
-        if (!cloudAvailable) return;
-        cloudPending.add(localKey);
-        if (cloudTimer) clearTimeout(cloudTimer);
-        cloudTimer = setTimeout(cloudFlush, 600);
-    }
-
-    function cloudFlush() {
-        cloudTimer = null;
-        if (!cloudOk()) { cloudPending.clear(); return; }
-        const keys = Array.from(cloudPending);
-        cloudPending.clear();
-        cloudFlushChain = cloudFlushChain.then(async () => {
-            for (const k of keys) {
-                try { await cloudPushKey(k); }
-                catch (e) { console.warn('cloud push fail', k, e); }
-            }
-        });
-    }
-
-    function cloudOk() { return cloudAvailable && !!cloudStore(); }
 
     async function cloudBoot() {
-        try {
-            if (!tg || !tg.initDataUnsafe || !tg.initDataUnsafe.user || !cloudStore()) return; // вне TG — локально
-            cloudAvailable = true;
-            const hadCloud = await cloudPull();
-            if (!hadCloud) {
-                // миграция: локальные данные впервые -> залить в облако
-                CLOUD_LOCAL_KEYS.forEach(k => { if (localStorage.getItem(k) !== null) cloudPending.add(k); });
-                setTimeout(cloudFlush, 400);
-            }
-        } catch (e) {
-            cloudAvailable = false;
-            console.warn('cloud boot fail', e);
-        }
+        try { await syncPull(); } catch {}
     }
 
-    document.addEventListener('DOMContentLoaded', () => { cloudBoot().then(init); });
+    // ⚠️ КОДЕР: init() сразу (UI из локального кеша, без ожидания сети), cloudBoot() — фоном
+    document.addEventListener('DOMContentLoaded', () => {
+        init();
+        cloudBoot();
+    });
 })();
+
