@@ -7,6 +7,7 @@
     const LIFETIME_KEY = 'habit-tracker-lifetime';
     const HISTORY_KEY = 'habit-tracker-history';
     const SETTINGS_KEY = 'habit-tracker-settings';
+    const WELCOME_KEY = 'habit-tracker-welcome';
 
     const DEFAULT_PERIOD = 30;
 
@@ -997,7 +998,8 @@
     }
 
     function isAnyOverlayOpen() {
-        return $('#modalOverlay').classList.contains('active') ||
+        return $('#welcomeOverlay').classList.contains('active') ||
+            $('#modalOverlay').classList.contains('active') ||
             $('#confirmOverlay').classList.contains('active') ||
             $('#periodInputOverlay').classList.contains('active') ||
             $('#timeInputOverlay').classList.contains('active') ||
@@ -1018,6 +1020,32 @@
         } catch {
             /* нет BackButton */
         }
+    }
+
+    // ---- Приветственное окно для новых пользователей ----
+    function isWelcomeVisible() {
+        return $('#welcomeOverlay').classList.contains('active');
+    }
+    function showWelcome() {
+        if (localStorage.getItem(WELCOME_KEY)) return;
+        // у пользователя уже есть данные — окно «новым» не показываем
+        if (localStorage.getItem(STORAGE_KEY)) {
+            try { localStorage.setItem(WELCOME_KEY, '1'); } catch { /* ignore */ }
+            return;
+        }
+        $('#welcomeOverlay').classList.add('active');
+        document.body.classList.add('modal-open');
+        updateBackButton();
+    }
+    function hideWelcome() {
+        $('#welcomeOverlay').classList.remove('active');
+        document.body.classList.remove('modal-open');
+        try { localStorage.setItem(WELCOME_KEY, '1'); } catch { /* ignore */ }
+        updateBackButton();
+    }
+    // после серверного синка могли прийти данные — окно больше не нужно
+    function maybeWelcomeAfterSync() {
+        if (isWelcomeVisible() && localStorage.getItem(STORAGE_KEY)) hideWelcome();
     }
 
     function showConfirm(message) {
@@ -2554,9 +2582,17 @@
         // Первичная синхронизация напоминаний (если есть задачи с напоминанием)
         setTimeout(syncRemindersToBackend, 2500);
         setTimeout(fetchState, 3000);
+
+        // Приветственное окно для новых пользователей
+        $('#welcomeStart').addEventListener('click', hideWelcome);
+        setTimeout(showWelcome, 50);
     }
 
     function closeTopLayer() {
+        if (isWelcomeVisible()) {
+            hideWelcome();
+            return;
+        }
         if ($('#confirmOverlay').classList.contains('active')) {
             resolveConfirm(false);
             return;
@@ -2602,7 +2638,7 @@
     // и работают из любого клиента. Конфликт: last-write-wins по updatedAt (клиентские часы).
     // Перед удалением/переделкой — согласуй с пользователем (это его явный заказ).
     const DATA_ENDPOINT = 'https://veyo-reminders.okhotinandrei5.workers.dev/api/data';
-    const SYNC_LOCAL_KEYS = [STORAGE_KEY, THEME_KEY, PLANS_KEY, LIFETIME_KEY, HISTORY_KEY, SETTINGS_KEY, STATS_KEY];
+    const SYNC_LOCAL_KEYS = [STORAGE_KEY, THEME_KEY, PLANS_KEY, LIFETIME_KEY, HISTORY_KEY, SETTINGS_KEY, STATS_KEY, WELCOME_KEY];
     const SYNC_META_KEY = 'habit-tracker-sync'; // { updatedAt: <ms> } — когда локально меняли в последний раз
     const SYNC_PUSH_DEBOUNCE_MS = 1500;
     const SYNC_FETCH_TIMEOUT_MS = 4000;
@@ -2665,6 +2701,7 @@
             loadSettings();
             renderHabits();
             renderPlan();
+            maybeWelcomeAfterSync(); // данные пришли с сервера — приветствие больше не нужно
         } catch {}
     }
 
