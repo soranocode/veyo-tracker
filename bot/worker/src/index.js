@@ -4,8 +4,10 @@
 //   2) Уведомление ровно в время задачи (текст + кнопка «Выполнено»)
 // Формат сообщения: {эмодзи|цветной кружок} {название} — {время задачи}
 // v3 (2026-09-09): серверная синхронизация данных мини-аппа (вариант B) — /api/data + валидация initData.
+// v4 (2026-09-09): фиксы логики сообщений (аудит): P1 кнопка несёт дату (done:<YYYY-MM-DD>:<taskId>),
+//   P2 чистка warn-сообщения при выполнении/удалении задачи, P3 вебхук по secret_token.
 // Эндпоинты:
-//   POST /api/sync    — мини-апп: { user_id, tz, leadMin, tasks: [{id,name,emoji,color,reminderTime,active,goal,doneToday}] }
+//   POST /api/sync    — мини-апп: { user_id, tz, leadMin, tasks: [{id,name,emoji,color,reminderTime,active,doneToday}] }
 //   GET  /api/state   — мини-апп: ?user_id= -> отметки «выполнено» из бота { done: { <taskId>: ["YYYY-MM-DD", ...] } }
 //   GET  /api/data    — мини-апп: ?initData=<сырой tg.initData> -> { ok, updatedAt:<ms|null>, data:<строка|null> } (снимок состояния)
 //   POST /api/data    — мини-апп: { initData, updatedAt:<ms>, data:"<json строкой>" } — last-write-wins (updatedAt > snap.updatedAt)
@@ -160,6 +162,20 @@ async function sendTelegram(env, chatId, text, extra = {}) {
   }
 }
 
+// P2: удалить из чата ранее отправленное предупреждение (если есть) и забыть про него
+async function deleteWarnIfAny(env, userId, chatId, taskId) {
+  const warnMsgId = await env.VEYO_KV.get(`warnmsg:${userId}:${taskId}`);
+  if (!warnMsgId) return;
+  if (chatId) {
+    try {
+      await tgApi(env, 'deleteMessage', { chat_id: chatId, message_id: Number(warnMsgId) });
+    } catch (err) {
+      console.error(`delete warn msg fail user=${userId} task=${taskId}:`, String(err));
+    }
+  }
+  await env.VEYO_KV.delete(`warnmsg:${userId}:${taskId}`).catch(() => {});
+}
+
 // ---- POST /api/sync ----
 async function handleSync(request, env) {
   try {
@@ -178,11 +194,25 @@ async function handleSync(request, env) {
       color: t.color != null ? String(t.color) : '#22a2f0',
       reminderTime: t.reminderTime ? String(t.reminderTime) : null,
       active: !!t.active,
-      goal: Math.min(Math.max(parseInt(t.goal, 10) || 1, 1), 100),
       // doneToday валиден только на дату syncDate (снимок «на сегодня» в момент sync)
       doneToday: !!t.doneToday,
       doneDate: syncDate,
     })).filter((t) => t.id && t.reminderTime) : [];
+
+    // P2: задача удалена в приложении или потеряла время -> чистим её предупреждение из чата
+    const prevRaw = await env.VEYO_KV.get(`user:${userId}`);
+    if (prevRaw) {
+      try {
+        const prevTasks = JSON.parse(prevRaw).tasks || [];
+        if (Array.isArray(prevTasks) && prevTasks.length) {
+          const newIds = new Set(tasks.map((t) => t.id));
+          const chatId = await env.VEYO_KV.get(`chat:${userId}`);
+          for (const old of prevTasks) {
+            if (old && old.id && !newIds.has(old.id)) await deleteWarnIfAny(env, userId, chatId, old.id);
+          }
+        }
+      } catch { /* не критично */ }
+    }
 
     await env.VEYO_KV.put(
       `user:${userId}`,
@@ -255,6 +285,15 @@ async function doneInKv(env, userId, taskId, today) {
 // ---- POST /webhook (Telegram: message + callback_query) ----
 async function handleWebhook(request, env) {
   try {
+    // P3: вебхук принимаем только от Telegram (secret_token из setWebhook) — подделки отклоняем
+    const expectedSecret = env.WEBHOOK_SECRET;
+    if (!expectedSecret) {
+      console.error('WEBHOOK_SECRET не задан (wrangler secret put WEBHOOK_SECRET)');
+      return json({ ok: false, error: 'unauthorized' }, 401);
+    }
+    const gotSecret = request.headers.get('X-Telegram-Bot-Api-Secret-Token') || '';
+    if (!safeEqual(gotSecret, expectedSecret)) return json({ ok: false, error: 'unauthorized' }, 401);
+
     const update = await request.json();
 
     // обычное сообщение: запоминаем chat_id
@@ -294,11 +333,19 @@ async function answerCq(env, cqId, text) {
 async function handleDoneButton(cq, env) {
   const data = String(cq.data || '');
   if (!data.startsWith('done:')) return;
-  const taskId = data.slice('done:'.length);
+  // P1: кнопка несёт дату уведомления: done:<YYYY-MM-DD>:<taskId> (старая форма без даты — отклоняем)
+  const rest = data.slice('done:'.length);
+  const m = /^(\d{4}-\d{2}-\d{2}):(.+)$/.exec(rest);
   const from = cq.from;
   const userId = from && from.id;
   const cMsg = cq.message;
-  if (!userId || !taskId) return;
+  if (!userId) return;
+  if (!m) {
+    try { await answerCq(env, cq.id, 'Устарело: нажмите кнопку в свежем уведомлении'); } catch {}
+    return;
+  }
+  const btnDate = m[1];
+  const taskId = m[2];
   try { await answerCq(env, cq.id); } catch { /* не критично */ }
 
   const raw = await env.VEYO_KV.get(`user:${userId}`);
@@ -306,11 +353,16 @@ async function handleDoneButton(cq, env) {
   let userData;
   try { userData = JSON.parse(raw); } catch { return; }
 
-  const task = (userData.tasks || []).find((t) => t.id === taskId);
-  if (!task) return; // задача удалена — молча игнорим
-
   const tz = userData.tz || 'UTC';
   const today = dateInTz(tz);
+  // кнопка из уведомления за другой день: отметку не ставим (иначе отметился бы «сегодня»)
+  if (btnDate !== today) {
+    try { await answerCq(env, cq.id, 'Это напоминание за другой день'); } catch {}
+    return;
+  }
+
+  const task = (userData.tasks || []).find((t) => t.id === taskId);
+  if (!task) return; // задача удалена — молча игнорим
 
   const already = await env.VEYO_KV.get(`done:${userId}:${today}:${taskId}`);
   if (!already) {
@@ -375,6 +427,11 @@ async function deliverForUser(env, key, now) {
         // задача уже выполнена сегодня (снимок sync сегодняшний или отметка из бота)
         const done = isDoneToday(userData, userId, task, today) || (await doneInKv(env, userId, task.id, today));
 
+        if (done) {
+          // P2: выполнено (кнопкой или в приложении) -> убираем ранее отправленное предупреждение из чата
+          await deleteWarnIfAny(env, userId, chatId, task.id);
+        }
+
         // 1) предупреждение за leadMin минут до времени задачи
         if (!done && leadMin > 0) {
           const warnMin = (taskMin - leadMin + 1440) % 1440;
@@ -388,24 +445,13 @@ async function deliverForUser(env, key, now) {
           }
         }
 
-        // 2) уведомление в само время задачи (+ кнопка «Выполнено», пока goal <= 1)
+        // P1: кнопка «Выполнено» с датой (done:<YYYY-MM-DD>:<taskId>)
         if (!done && nowMin === taskMin && !(await alreadySent(env, userId, today, task.id, 'due'))) {
-          const goal = task.goal || 1;
-          const extra = goal <= 1
-            ? { reply_markup: { inline_keyboard: [[{ text: '✅ Выполнено', callback_data: `done:${task.id}` }]] } }
-            : {};
+          const extra = { reply_markup: { inline_keyboard: [[{ text: '✅ Выполнено', callback_data: `done:${today}:${task.id}` }]] } };
           await sendTelegram(env, chatId, taskLine(task, false), extra);
           await markSent(env, userId, today, task.id, 'due');
           // уведомление пришло — удаляем раннее предупреждение из чата
-          const warnMsgId = await env.VEYO_KV.get(`warnmsg:${userId}:${task.id}`);
-          if (warnMsgId) {
-            try {
-              await tgApi(env, 'deleteMessage', { chat_id: chatId, message_id: Number(warnMsgId) });
-            } catch (err) {
-              console.error(`delete warn msg fail user=${userId} task=${task.id}:`, String(err));
-            }
-            await env.VEYO_KV.delete(`warnmsg:${userId}:${task.id}`).catch(() => {});
-          }
+          await deleteWarnIfAny(env, userId, chatId, task.id);
         }
       }
     } catch (err) {
@@ -550,8 +596,28 @@ export default {
     if (url.pathname === '/webhook' && request.method === 'POST') {
       return handleWebhook(request, env);
     }
+    // служебный (P3): переустановить webhook с secret_token. Нужен, т.к. с ПК пользователя
+    // api.telegram.org недоступен (сеть режет), а worker до Telegram ходит нормально.
+    // Доступ: заголовок X-Admin-Secret = WEBHOOK_SECRET.
+    if (url.pathname === '/admin/setwebhook' && request.method === 'POST') {
+      const adminSecret = request.headers.get('X-Admin-Secret') || '';
+      if (!env.WEBHOOK_SECRET || !safeEqual(adminSecret, env.WEBHOOK_SECRET)) {
+        return json({ ok: false, error: 'unauthorized' }, 401);
+      }
+      const tgResp = await fetch(`https://api.telegram.org/bot${env.BOT_TOKEN}/setWebhook`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          url: 'https://veyo-reminders.okhotinandrei5.workers.dev/webhook',
+          secret_token: env.WEBHOOK_SECRET,
+          allowed_updates: ['message', 'callback_query'],
+        }),
+      });
+      const tgText = await tgResp.text();
+      return json({ ok: tgResp.ok, telegram: tgText.slice(0, 600) });
+    }
     if (url.pathname === '/') {
-      return json({ ok: true, service: 'veyo-reminders', version: 3 });
+      return json({ ok: true, service: 'veyo-reminders', version: 4 });
     }
     return json({ ok: false, error: 'not found' }, 404);
   },
