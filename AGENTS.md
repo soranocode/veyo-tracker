@@ -110,12 +110,13 @@ $tg = $root.Replace('<meta name="viewport" content="width=device-width, initial-
 
 ## Telegram Mini App (telegram/)
 
-### ⚠️ СИНК v9 (09.09.2026, бот-агент) — НЕ ОТКАТЫВАТЬ
+### ⚠️ СИНК v10 (09.09.2026, бот-агент) — НЕ ОТКАТЫВАТЬ
 - `telegram/js/app.js` содержит **серверную синхронизацию (вариант B)**: CloudStorage-слой (`v1.*`, вариант A) УДАЛЁН и заменён на зеркало в нашем worker — `GET/POST https://veyo-reminders.okhotinandrei5.workers.dev/api/data` (KV `snap:<user_id>`, валидация initData, last-write-wins по `updatedAt` из `localStorage['habit-tracker-sync']`).
 - Причина: Telegram CloudStorage НЕ работает в Telegram Desktop → на каждом устройстве был пустой кеш («новая страница»). Заказ пользователя (09.09): один аккаунт на разных устройствах должен видеть одинаковые данные.
 - Поведение: localStorage = кеш/источник UI (init() сразу), cloudBoot() фоном сравнивает с сервером и применяет/заливает; cloudQueue() после save/saveStats/saveSettings/saveHistory/savePlans/toggleTheme (debounce 1.5с). Вне Telegram — чисто локально (no-op).
-- Резервный слой CloudStorage НЕ возвращать без команды пользователя. Правки синк-логики — только по согласованию (это зона бот-агента, см. bot/README.md).
-- Корневой `js/app.js` синк-слоя НЕ имеет (там он не нужен — нет Telegram SDK) — это НЕ расхождение, не копировать туда слой.
+- 09.09 позже: фича «Цель/goal» удалена (коммит e9f8bfb) — выполнение бинарное; кнопка «Выполнено» теперь всегда. Worker v4 (5244695): кнопка с датой, чистка warn, /webhook по secret_token.
+- **⚠️ Регенерация `telegram/index.html` из корневого `index.html` (процедура ниже) СБРАСЫВАЕТ версию `app.js?v=` и стирает маркер-комментарий!** После регенерации ОБЯЗАТЕЛЬНО поднять `app.js?v=10` (сейчас актуальная; иначе Telegram-клиенты отдадут закешированный старый JS) и при желании вернуть комментарий. Синк-слой CloudStorage НЕ возвращать — это зона бот-агента (bot/README.md).
+- Корневой `js/app.js` синк-слоя НЕ имеет (там нет Telegram SDK) — это НЕ расхождение, не копировать туда слой. Деплой фронта DEV: `wrangler pages deploy telegram --project-name veyo-tracker-dev --branch main`.
 
 - Развёрнуто на Cloudflare Pages (проект `veyo-tracker`): https://veyo-tracker.pages.dev/ (обновление — команда из п.3).
 - wrangler установлен глобально, авторизация сохранена в `C:\Users\user\.wrangler\config\default.toml` (важна копия и в `AppData\Roaming\xdg.config\.wrangler\config\default.toml` — было несоответствие путей, из-за чего wrangler писал «Not logged in»).

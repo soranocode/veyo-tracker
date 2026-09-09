@@ -78,8 +78,9 @@ Mini App (telegram/, CF Pages)                Cloudflare Worker "veyo-reminders"
 - Бот «только плашка»: молчит на сообщения, отвечает только действиями (кнопка)
 
 ### 4. Мини-апп (территория кодера; критические правки делает бот-агент по команде пользователя)
-Актуальная версия на Pages dev: **v9** (09.09, коммит 9558ff3) — серверный синк (вариант B). Что важно знать:
-- **Кросс-девайс синк (v9)**: CloudStorage-слой (v1.*) УДАЛЁН и заменён на зеркало в worker: при старте init() рендерит UI сразу из localStorage (кеш), затем cloudBoot() тянет `GET /api/data` и применяет, если сервер новее; после save/saveStats/saveSettings/saveHistory/savePlans/toggleTheme — cloudQueue() → `POST /api/data` (debounce 1.5с). Конфликт: last-write-wins по `updatedAt` (localStorage `habit-tracker-sync`). Вне TG — чисто локально.
+Актуальная версия на Pages dev: **v10** (09.09, коммит e9f8bfb) — серверный синк (вариант B) + удалена фича «Цель». Что важно знать:
+- **Кросс-девайс синк (v9+/v10)**: CloudStorage-слой (v1.*) УДАЛЁН и заменён на зеркало в worker: при старте init() рендерит UI сразу из localStorage (кеш), затем cloudBoot() тянет `GET /api/data` и применяет, если сервер новее; после save/saveStats/saveSettings/saveHistory/savePlans/toggleTheme — cloudQueue() → `POST /api/data` (debounce 1.5с). Конфликт: last-write-wins по `updatedAt` (localStorage `habit-tracker-sync`). Вне TG — чисто локально.
+- 09.09: фича «Цель (goal)» удалена (бинарное выполнение 0→1→0), кнопка «Выполнено» в боте — всегда. telegram/index.html пересобирался из корневого → версия поднята до `?v=10` (регенерация сбрасывает — см. AGENTS.md ⚠️).
 - ⚠️ КОДЕР (opencode): слой синка — зона бот-агента, CloudStorage НЕ возвращать; пометки в шапке секции app.js, AGENTS.md, index.html.
 - sync шлёт `leadMin`, `color`, `doneToday`; задачи без эмодзи — `emoji: ''` (фолбэк «🔔» был багом кодера, исправлен; НЕ возвращать).
 - fetchState() вызывается в init (кнопка «Выполнено» → мерж в приложение).
