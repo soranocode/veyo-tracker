@@ -120,7 +120,7 @@ node tools\sync-builds.js
 2. `node tools\sync-builds.js` — разложить по android assets и telegram (см. выше).
 3. Деплой Telegram — DEV: `wrangler pages deploy telegram --project-name veyo-tracker-dev --branch main` (занимает ~2 с).
 3а. Деплой Telegram — ПРОД: `wrangler pages deploy telegram --project-name veyo-tracker --branch main` (занимает ~2 с). Prod ТОЛЬКО после команды пользователя «прод/деплой прод».
-   DEV: https://veyo-tracker-dev.pages.dev/ — ПРОД: https://veyo-tracker.pages.dev/ (задеплоен 10.09, v0.1.1). Git-ветки: `dev` / `master`. Старые CF-проекты habit-tracker/habit-tracker-dev остались на месте (не удалять без спроса).
+   DEV: https://veyo-tracker-dev.pages.dev/ — ПРОД: https://veyo-tracker.pages.dev/ (оба задеплоены 10.09, v0.2.0). Git-ветки: `dev` / `master`. Старые CF-проекты habit-tracker/habit-tracker-dev остались на месте (не удалять без спроса).
 4. APK — ТОЛЬКО по явной просьбе пользователя: `cd android; $env:JAVA_HOME='C:\Program Files\Android\Android Studio\jbr'; .\gradlew.bat assembleRelease`, далее `Copy-Item app\build\outputs\apk\release\app-release.apk -> C:\Users\user\Downloads\VeyoTracker.apk`.
 5. Node-проверка: `node --check js\app.js`.
 
@@ -165,7 +165,7 @@ node tools\sync-builds.js
 
 - Формат: `v<major>.<minor>.<patch>` (напр. `v1.0.0`). Аннотированный тег: `git tag -a v1.0.0 -m "..."`.
 - Тег ставится в момент релиза (сборка APK/деплой ПРОД) на `master` — точка архивации состояния.
-- Текущий последний тег: `v1.0.0` (первый стабильный релиз, 02.09).
+- Текущий последний тег: `v0.2.0` (редизайн под Telegram Mini App, 10.09). До него был `v1.0.0` (02.09) — нумерация переехала на 0.x вместе с версией в UI.
 - Пуш тегов: `git push origin master && git push origin v1.0.0` (v1.0.1/... по образцу).
 
 ### Релизный процесс (чек-лист)
