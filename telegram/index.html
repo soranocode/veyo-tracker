@@ -4,377 +4,439 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
     <title>Veyo Tracker — Трекер задач</title>
-    <link rel="stylesheet" href="css/style.css?v=8">
+    <link rel="stylesheet" href="css/style.css?v=9">
     <script src="https://telegram.org/js/telegram-web-app.js"></script>
 </head>
 <body>
+    <svg class="icon-sprite" aria-hidden="true" focusable="false">
+        <symbol id="i-check" viewBox="0 0 24 24"><path d="M4.5 12.5l5 5L19.5 6.5"/></symbol>
+        <symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></symbol>
+        <symbol id="i-close" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></symbol>
+        <symbol id="i-pencil" viewBox="0 0 24 24"><path d="M4 20h4l10.5-10.5a2.1 2.1 0 0 0-3-3L5 17v3z"/><path d="M13.5 6.5l4 4"/></symbol>
+        <symbol id="i-trash" viewBox="0 0 24 24"><path d="M4 7h16M10 4h4M6 7l1 13h10l1-13M10 11v6M14 11v6"/></symbol>
+        <symbol id="i-eject" viewBox="0 0 24 24"><path d="M12 15V4M8 8l4-4 4 4M5 15v3a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-3"/></symbol>
+        <symbol id="i-list" viewBox="0 0 24 24"><path d="M4 6.5h16M4 12h16M4 17.5h10"/></symbol>
+        <symbol id="i-calendar" viewBox="0 0 24 24"><rect x="3.5" y="5" width="17" height="15.5" rx="3"/><path d="M8 3v4M16 3v4M3.5 10h17"/></symbol>
+        <symbol id="i-bell" viewBox="0 0 24 24"><path d="M18 9a6 6 0 1 0-12 0c0 5-2 6.5-2 6.5h16S18 14 18 9z"/><path d="M10.5 19a1.8 1.8 0 0 0 3 0"/></symbol>
+        <symbol id="i-clock" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5"/><path d="M12 7.5V12l3 2"/></symbol>
+        <symbol id="i-history" viewBox="0 0 24 24"><path d="M4 12a8 8 0 1 0 2.5-5.8L4 8.5"/><path d="M4 4v4.5h4.5"/><path d="M12 8v4.5l3 1.8"/></symbol>
+        <symbol id="i-flame" viewBox="0 0 24 24"><path d="M12 3.5s5.5 4.2 5.5 9a5.5 5.5 0 0 1-11 0c0-2 1-3.6 2-4.8.2 1.4 1 2.3 2 2.3 1.5 0 2.2-1.5 1.5-6.5z"/></symbol>
+        <symbol id="i-moon" viewBox="0 0 24 24"><path d="M20 14.5A8.5 8.5 0 1 1 9.5 4a7 7 0 0 0 10.5 10.5z"/></symbol>
+        <symbol id="i-sun" viewBox="0 0 24 24"><circle cx="12" cy="12" r="4.2"/><path d="M12 2.5v2.2M12 19.3v2.2M2.5 12h2.2M19.3 12h2.2M5.2 5.2l1.6 1.6M17.2 17.2l1.6 1.6M18.8 5.2l-1.6 1.6M6.8 17.2l-1.6 1.6"/></symbol>
+        <symbol id="i-up" viewBox="0 0 24 24"><path d="M6 14.5l6-6 6 6"/></symbol>
+        <symbol id="i-down" viewBox="0 0 24 24"><path d="M6 9.5l6 6 6-6"/></symbol>
+        <symbol id="i-target" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5"/><circle cx="12" cy="12" r="4"/><circle cx="12" cy="12" r="0.6"/></symbol>
+    </svg>
+
     <div class="app">
-        <header class="header">
-            <div class="header-left">
-                <h1>Veyo Tracker</h1>
-                <span class="date-display" id="currentDate"></span>
-            </div>
-            <div class="header-right">
-                <button class="btn-icon" id="themeToggle" title="Переключить тему">🌙</button>
-                <button class="btn-primary" id="addHabitBtn">+ Задача</button>
+        <header class="topline">
+            <span class="topline-date" id="currentDate"></span>
+            <div class="topline-right">
+                <span class="streak-chip" id="streakChip" title="Дней подряд">
+                    <svg class="ico"><use href="#i-flame"></use></svg><b id="statStreak">0</b>
+                </span>
+                <button class="icon-btn" id="themeToggle" title="Переключить тему" aria-label="Переключить тему">
+                    <svg class="ico"><use href="#i-moon"></use></svg>
+                </button>
             </div>
         </header>
 
-        <nav class="tabs" id="tabs">
-            <button type="button" class="tab active" id="tabHabits" data-tab="habits">Задачи</button>
-            <button type="button" class="tab" id="tabPlans" data-tab="plans">План</button>
-        </nav>
-
-        <section class="stats-bar" id="statsBar">
-            <div class="stat-card" title="Дней подряд, когда выполнены все задачи">
-                <span class="stat-value" id="statStreak">0</span>
-                <span class="stat-label">Серия дней</span>
+        <section class="hero" id="hero">
+            <div class="hero-main">
+                <div class="hero-num" id="statToday">0 из 0</div>
+                <div class="hero-sub">задач выполнено сегодня</div>
+                <div class="hero-meta">
+                    <button type="button" class="hero-chip" id="statTotalCard" title="Смотреть историю выполнений">
+                        <svg class="ico"><use href="#i-history"></use></svg><b id="statTotal">0</b> всего
+                    </button>
+                    <span class="hero-chip hero-chip-static" title="Средний прогресс задач по их периодам">
+                        <b id="statPeriod">0%</b> за период
+                    </span>
+                </div>
             </div>
-            <div class="stat-card stat-card-clickable" id="statTodayCard" role="button" tabindex="0" title="Перейти к задачам на сегодня">
-                <span class="stat-value" id="statToday">0/0</span>
-                <span class="stat-label">Сегодня</span>
-            </div>
-            <div class="stat-card stat-card-clickable" id="statTotalCard" role="button" tabindex="0" title="Смотреть историю выполнений">
-                <span class="stat-value" id="statTotal">0</span>
-                <span class="stat-label">Всего выполнено</span>
-            </div>
+            <svg class="hero-ring" id="heroRing" viewBox="0 0 44 44" aria-hidden="true">
+                <circle class="ring-track" cx="22" cy="22" r="18"></circle>
+                <circle class="ring-value" cx="22" cy="22" r="18" transform="rotate(-90 22 22)"></circle>
+                <text class="ring-text" id="heroRingText" x="22" y="26" text-anchor="middle">0%</text>
+            </svg>
         </section>
 
         <main class="main">
             <div id="viewHabits">
-                <div class="habits-section" id="habitsSection">
-                    <div class="section-header">
+                <section class="section" id="habitsSection">
+                    <div class="section-head">
                         <h2>Сегодня</h2>
-                        <span class="section-subtitle" id="dayProgress"></span>
+                        <span class="section-sub" id="dayProgress"></span>
                     </div>
-                    <div class="habits-list" id="habitsList">
-                        <div class="empty-state" id="emptyState">
-                            <span class="empty-icon">📋</span>
-                            <p>Добавьте первую задачу, чтобы начать отслеживание</p>
-                        </div>
-                    </div>
-                </div>
+                    <div class="habits-list" id="habitsList"></div>
+                </section>
 
-                <div class="plan-section">
-                    <div class="section-header">
+                <section class="section">
+                    <div class="section-head">
                         <h2>План на период</h2>
-                        <span class="section-subtitle">Клик по дню — отметить выполнение</span>
+                        <span class="section-sub">клик по дню — отметить</span>
                     </div>
                     <div class="plan" id="plan"></div>
-                </div>
+                </section>
             </div>
 
             <div id="viewPlans" hidden>
-                <div class="plans-section">
-                    <div class="section-header">
+                <section class="section">
+                    <div class="section-head">
                         <h2>Планы</h2>
-                        <span class="section-subtitle" id="plansProgressText">Составь план из задач и отмечай по дням</span>
+                        <span class="section-sub" id="plansProgressText">задачи, объединённые в один план</span>
                     </div>
                     <div class="plans-list" id="plansList"></div>
-                    <button class="btn-primary btn-full plan-add-btn" id="addPlanBtn">+ Создать план</button>
-                </div>
+                </section>
             </div>
         </main>
 
-        <div class="app-version">Veyo Tracker v0.1.1</div>
+        <div class="app-version">Veyo Tracker v0.2.0</div>
+    </div>
 
-        <div class="modal-overlay" id="modalOverlay">
-            <div class="modal">
-                <div class="modal-header">
-                    <h3 id="modalTitle">Новая задача</h3>
-                    <button class="btn-close" id="modalClose">&times;</button>
-                </div>
-                <form id="habitForm">
-                    <div class="form-group">
-                        <label>Иконка</label>
-                        <div class="emoji-group">
-                            <div class="emoji-picker" id="emojiPicker">
-                                <button type="button" class="emoji-btn no-emoji-btn selected" data-emoji="" title="Без смайлика"></button>
-                                <button type="button" class="emoji-btn" data-emoji="💧">💧</button>
-                                <button type="button" class="emoji-btn" data-emoji="🏃">🏃</button>
-                                <button type="button" class="emoji-btn" data-emoji="📚">📚</button>
-                                <button type="button" class="emoji-btn" data-emoji="🏋️">🏋️</button>
-                                <button type="button" class="emoji-btn" data-emoji="💤">💤</button>
-                                <button type="button" class="emoji-btn" data-emoji="🍎">🍎</button>
-                                <button type="button" class="emoji-btn" data-emoji="💊">💊</button>
-                                <button type="button" class="emoji-btn" data-emoji="🧹">🧹</button>
-                                <button type="button" class="emoji-btn" data-emoji="🚶">🚶</button>
-                                <button type="button" class="emoji-btn" data-emoji="🎯">🎯</button>
-                                <button type="button" class="emoji-btn" data-emoji="📺">📺</button>
-                            </div>
-                            <input type="text" class="emoji-input" id="customEmoji" placeholder="Введи свой смайлик" maxlength="20" autocomplete="off">
-                        </div>
-                    </div>
-                    <div class="form-group">
-                        <label for="habitName">Название</label>
-                        <input type="text" id="habitName" placeholder="Например: Пить воду" required>
-                        <p class="form-error" id="nameError" hidden>Введите название задачи</p>
-                    </div>
-                    <div class="form-group" id="periodGroup">
-                        <label for="periodSlider">Период</label>
-                        <div class="period-display" id="periodDisplay" role="button" tabindex="0" title="Нажмите, чтобы ввести свой период">
-                            <span class="period-value" id="periodValue">30 дней</span>
-                            <span class="period-label">изменить</span>
-                        </div>
-                        <input type="range" id="periodSlider" min="1" max="365" value="30" class="period-slider">
-                        <div class="period-presets" id="periodPresets">
-                            <button type="button" class="preset-btn" data-days="1">1 дн</button>
-                            <button type="button" class="preset-btn" data-days="7">1 нед</button>
-                            <button type="button" class="preset-btn" data-days="14">2 нед</button>
-                            <button type="button" class="preset-btn" data-days="28">4 нед</button>
-                            <button type="button" class="preset-btn" data-days="30" data-selected="true">1 мес</button>
-                            <button type="button" class="preset-btn" data-days="60">2 мес</button>
-                            <button type="button" class="preset-btn" data-days="90">3 мес</button>
-                            <button type="button" class="preset-btn" data-days="180">6 мес</button>
-                            <button type="button" class="preset-btn" data-days="365">1 год</button>
-                        </div>
-                        <div class="plan-period-custom">
-                            <input type="number" id="periodCustomDaysInline" min="1" max="365" value="30" inputmode="numeric">
-                            <span>дней</span>
-                        </div>
-                        <input type="hidden" id="habitPeriod" value="30">
-                        <label class="no-period-toggle">
-                            <input type="checkbox" id="habitNoPeriod">
-                            <span>Без периода <small>задача висит, пока не выполнишь — удалится на следующий день</small></span>
-                        </label>
-                    </div>
-                    <div class="form-group">
-                        <label for="reminderDisplay">Напоминание</label>
-                        <div class="period-display" id="reminderDisplay" role="button" tabindex="0" title="Нажмите, чтобы выбрать время">
-                            <span class="period-value" id="reminderValue">Выбрать время</span>
-                            <span class="period-label" id="reminderLabel"></span>
-                        </div>
-                    </div>
-                    <div class="form-group">
-                        <label for="habitColor">Цвет</label>
-                        <div class="color-picker" id="colorPicker">
-                            <button type="button" class="color-btn selected" data-color="#22a2f0" style="background:#22a2f0"></button>
-                            <button type="button" class="color-btn" data-color="#00b894" style="background:#00b894"></button>
-                            <button type="button" class="color-btn" data-color="#fdcb6e" style="background:#fdcb6e"></button>
-                            <button type="button" class="color-btn" data-color="#e17055" style="background:#e17055"></button>
-                            <button type="button" class="color-btn" data-color="#6c5ce7" style="background:#6c5ce7"></button>
-                            <button type="button" class="color-btn" data-color="#e84393" style="background:#e84393"></button>
-                            <button type="button" class="color-btn" data-color="#d63031" style="background:#d63031"></button>
-                            <button type="button" class="color-btn" data-color="#000000" style="background:#000000"></button>
-                        </div>
-                    </div>
-                    <input type="hidden" id="habitId" value="">
-                    <button type="submit" class="btn-primary btn-full" id="submitBtn">Добавить</button>
-                </form>
-            </div>
-        </div>
-        <div class="modal-overlay" id="planModalOverlay">
-            <div class="modal">
-                <div class="modal-header">
-                    <h3 id="planModalTitle">Новый план</h3>
-                    <button class="btn-close" id="planModalClose" type="button">&times;</button>
-                </div>
-                <form id="planForm">
-                    <div class="form-group">
-                        <label>Иконка</label>
-                        <div class="emoji-group">
-                            <div class="emoji-picker" id="planEmojiPicker">
-                                <button type="button" class="p-emoji-btn selected" data-emoji="📅">📅</button>
-                                <button type="button" class="p-emoji-btn" data-emoji="🎯">🎯</button>
-                                <button type="button" class="p-emoji-btn" data-emoji="📝">📝</button>
-                                <button type="button" class="p-emoji-btn" data-emoji="🗓️">🗓️</button>
-                                <button type="button" class="p-emoji-btn" data-emoji="🏋️">🏋️</button>
-                                <button type="button" class="p-emoji-btn" data-emoji="📚">📚</button>
-                                <button type="button" class="p-emoji-btn" data-emoji="🧹">🧹</button>
-                                <button type="button" class="p-emoji-btn" data-emoji="🛒">🛒</button>
-                                <button type="button" class="p-emoji-btn" data-emoji="💰">💰</button>
-                                <button type="button" class="p-emoji-btn" data-emoji="✈️">✈️</button>
-                            </div>
-                            <input type="text" class="emoji-input" id="planCustomEmoji" placeholder="Введи свой смайлик" maxlength="20" autocomplete="off">
-                        </div>
-                    </div>
-                    <div class="form-group">
-                        <label for="planName">Название плана</label>
-                        <input type="text" id="planName" placeholder="Например: Учебный план" required>
-                        <p class="form-error" id="planNameError" hidden>Введите название плана</p>
-                    </div>
-                    <div class="form-group">
-                        <label for="planPeriodDaysInput">Период</label>
-                        <div class="period-display" id="planPeriodDisplay" role="button" tabindex="0" title="Нажмите, чтобы ввести свой период">
-                            <span class="period-value" id="planPeriodValue">30 дней</span>
-                            <span class="period-label">изменить</span>
-                        </div>
-                        <div class="period-presets" id="planPeriodPresets">
-                            <button type="button" class="preset-btn" data-days="1">1 дн</button>
-                            <button type="button" class="preset-btn" data-days="7">1 нед</button>
-                            <button type="button" class="preset-btn" data-days="14">2 нед</button>
-                            <button type="button" class="preset-btn" data-days="28">4 нед</button>
-                            <button type="button" class="preset-btn" data-days="30" data-selected="true">1 мес</button>
-                            <button type="button" class="preset-btn" data-days="60">2 мес</button>
-                            <button type="button" class="preset-btn" data-days="90">3 мес</button>
-                            <button type="button" class="preset-btn" data-days="180">6 мес</button>
-                            <button type="button" class="preset-btn" data-days="365">1 год</button>
-                        </div>
-                        <div class="plan-period-custom">
-                            <input type="number" id="planPeriodDaysInput" min="1" max="365" value="30" inputmode="numeric">
-                            <span>дней</span>
-                        </div>
-                        <input type="hidden" id="planPeriod" value="30">
-                    </div>
-                    <div class="form-group">
-                        <label>Цвет</label>
-                        <div class="color-picker" id="planColorPicker">
-                            <button type="button" class="p-color-btn selected" data-color="#22a2f0" style="background:#22a2f0"></button>
-                            <button type="button" class="p-color-btn" data-color="#00b894" style="background:#00b894"></button>
-                            <button type="button" class="p-color-btn" data-color="#fdcb6e" style="background:#fdcb6e"></button>
-                            <button type="button" class="p-color-btn" data-color="#e17055" style="background:#e17055"></button>
-                            <button type="button" class="p-color-btn" data-color="#6c5ce7" style="background:#6c5ce7"></button>
-                            <button type="button" class="p-color-btn" data-color="#e84393" style="background:#e84393"></button>
-                            <button type="button" class="p-color-btn" data-color="#d63031" style="background:#d63031"></button>
-                            <button type="button" class="p-color-btn" data-color="#000000" style="background:#000000"></button>
-                        </div>
-                    </div>
-                    <input type="hidden" id="planId" value="">
-                    <button type="submit" class="btn-primary btn-full" id="planSubmitBtn">Создать</button>
-                </form>
-            </div>
-        </div>
-        <div class="modal-overlay" id="itemModalOverlay">
-            <div class="modal">
-                <div class="modal-header">
-                    <h3 id="itemModalTitle">Добавить задачу в план</h3>
-                    <button class="btn-close" id="itemModalClose" type="button">&times;</button>
-                </div>
-                <form id="itemForm">
-                    <div class="form-group">
-                        <label>Иконка</label>
-                        <div class="emoji-group">
-                            <div class="emoji-picker">
-                                <button type="button" class="i-emoji-btn no-emoji-btn selected" data-emoji="" title="Без смайлика"></button>
-                                <button type="button" class="i-emoji-btn" data-emoji="📚">📚</button>
-                                <button type="button" class="i-emoji-btn" data-emoji="💧">💧</button>
-                                <button type="button" class="i-emoji-btn" data-emoji="🏃">🏃</button>
-                                <button type="button" class="i-emoji-btn" data-emoji="🏋️">🏋️</button>
-                                <button type="button" class="i-emoji-btn" data-emoji="💤">💤</button>
-                                <button type="button" class="i-emoji-btn" data-emoji="🍎">🍎</button>
-                                <button type="button" class="i-emoji-btn" data-emoji="💊">💊</button>
-                                <button type="button" class="i-emoji-btn" data-emoji="🧹">🧹</button>
-                                <button type="button" class="i-emoji-btn" data-emoji="🚶">🚶</button>
-                                <button type="button" class="i-emoji-btn" data-emoji="🎯">🎯</button>
-                                <button type="button" class="i-emoji-btn" data-emoji="📺">📺</button>
-                            </div>
-                            <input type="text" class="emoji-input" id="itemCustomEmoji" placeholder="Введи свой смайлик" maxlength="20" autocomplete="off">
-                        </div>
-                    </div>
-                    <div class="form-group">
-                        <label for="itemName">Название</label>
-                        <input type="text" id="itemName" placeholder="Например: Прочитать главу" required>
-                        <p class="form-error" id="itemNameError" hidden>Введите название задачи</p>
-                    </div>
-                    <div class="form-group">
-                        <label for="itemPeriodDays">Период</label>
-                        <div class="period-presets" id="itemPeriodPresets">
-                            <button type="button" class="preset-btn" data-days="7">1 нед</button>
-                            <button type="button" class="preset-btn" data-days="14">2 нед</button>
-                            <button type="button" class="preset-btn" data-days="28">4 нед</button>
-                            <button type="button" class="preset-btn" data-days="30" data-selected="true">1 мес</button>
-                            <button type="button" class="preset-btn" data-days="60">2 мес</button>
-                            <button type="button" class="preset-btn" data-days="90">3 мес</button>
-                            <button type="button" class="preset-btn" data-days="180">6 мес</button>
-                            <button type="button" class="preset-btn" data-days="365">1 год</button>
-                        </div>
-                        <div class="plan-period-custom">
-                            <input type="number" id="itemPeriodDays" min="1" max="365" value="30" inputmode="numeric">
-                            <span id="itemPeriodValue">30 дней</span>
-                        </div>
-                    </div>
-                    <input type="hidden" id="itemPlanId" value="">
-                    <button type="submit" class="btn-primary btn-full" id="itemSubmitBtn">Добавить</button>
-                </form>
-            </div>
-        </div>
-        <div class="move-overlay" id="moveOverlay" hidden>
-            <div class="move-hint">
-                <span class="move-hint-text">Выберите план — задача переедет в него</span>
-                <span class="move-hint-cancel">нажмите мимо плана, чтобы отменить</span>
-            </div>
-        </div>
-        <div class="modal-overlay" id="historyOverlay">
-            <div class="modal">
-                <div class="modal-header">
-                    <h3>История выполнений</h3>
-                    <button class="btn-close" id="historyClose" type="button">&times;</button>
-                </div>
-                <div class="history-list" id="historyList"></div>
-            </div>
-        </div>
-        <div class="confirm-overlay" id="confirmOverlay">
-            <div class="confirm-box">
-                <p class="confirm-text" id="confirmText"></p>
-                <div class="confirm-actions">
-                    <button class="btn-cancel" id="confirmCancel">Отмена</button>
-                    <button class="btn-danger" id="confirmOk">Удалить</button>
-                </div>
-            </div>
-        </div>
+    <nav class="tabbar" id="tabs">
+        <button type="button" class="tab active" id="tabHabits" data-tab="habits">
+            <svg class="ico"><use href="#i-list"></use></svg><span>Задачи</span>
+        </button>
+        <button type="button" class="fab" id="addHabitBtn" title="Новая задача" aria-label="Новая задача">
+            <svg class="ico"><use href="#i-plus"></use></svg>
+        </button>
+        <button type="button" class="tab" id="tabPlans" data-tab="plans">
+            <svg class="ico"><use href="#i-calendar"></use></svg><span>План</span>
+        </button>
+    </nav>
 
-        <div class="period-input-overlay" id="periodInputOverlay">
-            <div class="period-input-box">
-                <h4>Свой период</h4>
-                <p class="period-input-hint">Введите количество дней</p>
-                <input type="number" class="period-input-field" id="periodCustomDays" min="1" max="365" value="30" inputmode="numeric">
-                <p class="period-input-result" id="periodCustomResult"></p>
-                <div class="confirm-actions">
-                    <button class="btn-cancel" id="periodCustomCancel">Отмена</button>
-                    <button class="btn-primary" id="periodCustomOk">Сохранить</button>
+    <div class="modal-overlay" id="modalOverlay">
+        <div class="modal">
+            <div class="sheet-handle"></div>
+            <div class="modal-header">
+                <h3 id="modalTitle">Новая задача</h3>
+                <button class="btn-close" id="modalClose" type="button" aria-label="Закрыть">
+                    <svg class="ico"><use href="#i-close"></use></svg>
+                </button>
+            </div>
+            <form id="habitForm">
+                <div class="modal-actions" id="habitActions" hidden>
+                    <button type="button" class="ghost-btn" id="habitMoveToPlan">
+                        <svg class="ico"><use href="#i-calendar"></use></svg>В план
+                    </button>
+                    <button type="button" class="ghost-btn danger" id="habitDelete">
+                        <svg class="ico"><use href="#i-trash"></use></svg>Удалить
+                    </button>
                 </div>
+                <div class="form-group">
+                    <label>Иконка</label>
+                    <div class="emoji-group">
+                        <div class="emoji-picker" id="emojiPicker">
+                            <button type="button" class="emoji-btn no-emoji-btn selected" data-emoji="" title="Без смайлика"></button>
+                            <button type="button" class="emoji-btn" data-emoji="💧">💧</button>
+                            <button type="button" class="emoji-btn" data-emoji="🏃">🏃</button>
+                            <button type="button" class="emoji-btn" data-emoji="📚">📚</button>
+                            <button type="button" class="emoji-btn" data-emoji="🏋️">🏋️</button>
+                            <button type="button" class="emoji-btn" data-emoji="💤">💤</button>
+                            <button type="button" class="emoji-btn" data-emoji="🍎">🍎</button>
+                            <button type="button" class="emoji-btn" data-emoji="💊">💊</button>
+                            <button type="button" class="emoji-btn" data-emoji="🧹">🧹</button>
+                            <button type="button" class="emoji-btn" data-emoji="🚶">🚶</button>
+                            <button type="button" class="emoji-btn" data-emoji="🎯">🎯</button>
+                            <button type="button" class="emoji-btn" data-emoji="📺">📺</button>
+                        </div>
+                        <input type="text" class="emoji-input" id="customEmoji" placeholder="Свой смайлик" maxlength="20" autocomplete="off">
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label for="habitName">Название</label>
+                    <input type="text" id="habitName" placeholder="Например: Пить воду" required>
+                    <p class="form-error" id="nameError" hidden>Введите название задачи</p>
+                </div>
+                <div class="form-group" id="periodGroup">
+                    <label for="periodSlider">Период</label>
+                    <div class="period-display" id="periodDisplay" role="button" tabindex="0" title="Нажмите, чтобы ввести свой период">
+                        <span class="period-value" id="periodValue">30 дней</span>
+                        <span class="period-label">изменить</span>
+                    </div>
+                    <input type="range" id="periodSlider" min="1" max="365" value="30" class="period-slider">
+                    <div class="chip-row" id="periodPresets">
+                        <button type="button" class="chip" data-days="1">1 дн</button>
+                        <button type="button" class="chip" data-days="7">1 нед</button>
+                        <button type="button" class="chip" data-days="14">2 нед</button>
+                        <button type="button" class="chip" data-days="28">4 нед</button>
+                        <button type="button" class="chip" data-days="30" data-selected="true">1 мес</button>
+                        <button type="button" class="chip" data-days="60">2 мес</button>
+                        <button type="button" class="chip" data-days="90">3 мес</button>
+                        <button type="button" class="chip" data-days="180">6 мес</button>
+                        <button type="button" class="chip" data-days="365">1 год</button>
+                    </div>
+                    <input type="hidden" id="habitPeriod" value="30">
+                    <label class="switch-row">
+                        <span class="switch-text">
+                            Без периода
+                            <small>задача висит, пока не выполнишь — удалится на следующий день</small>
+                        </span>
+                        <input type="checkbox" id="habitNoPeriod">
+                        <span class="switch"></span>
+                    </label>
+                </div>
+                <div class="form-group">
+                    <label for="reminderDisplay">Напоминание</label>
+                    <div class="period-display period-display-soft" id="reminderDisplay" role="button" tabindex="0" title="Нажмите, чтобы выбрать время">
+                        <span class="period-value" id="reminderValue">Выбрать время</span>
+                        <span class="period-label" id="reminderLabel"></span>
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label for="habitColor">Цвет</label>
+                    <div class="color-picker" id="colorPicker">
+                        <button type="button" class="color-btn selected" data-color="#1E9BF0" style="--c:#1E9BF0"></button>
+                        <button type="button" class="color-btn" data-color="#16B981" style="--c:#16B981"></button>
+                        <button type="button" class="color-btn" data-color="#F5A524" style="--c:#F5A524"></button>
+                        <button type="button" class="color-btn" data-color="#F0644B" style="--c:#F0644B"></button>
+                        <button type="button" class="color-btn" data-color="#7C6BF5" style="--c:#7C6BF5"></button>
+                        <button type="button" class="color-btn" data-color="#EC5B9E" style="--c:#EC5B9E"></button>
+                        <button type="button" class="color-btn" data-color="#E0413A" style="--c:#E0413A"></button>
+                        <button type="button" class="color-btn" data-color="#4A6076" style="--c:#4A6076"></button>
+                    </div>
+                </div>
+                <input type="hidden" id="habitId" value="">
+                <button type="submit" class="btn-primary btn-full" id="submitBtn">Добавить</button>
+            </form>
+        </div>
+    </div>
+
+    <div class="modal-overlay" id="planModalOverlay">
+        <div class="modal">
+            <div class="sheet-handle"></div>
+            <div class="modal-header">
+                <h3 id="planModalTitle">Новый план</h3>
+                <button class="btn-close" id="planModalClose" type="button" aria-label="Закрыть">
+                    <svg class="ico"><use href="#i-close"></use></svg>
+                </button>
+            </div>
+            <form id="planForm">
+                <div class="form-group">
+                    <label>Иконка</label>
+                    <div class="emoji-group">
+                        <div class="emoji-picker" id="planEmojiPicker">
+                            <button type="button" class="p-emoji-btn selected" data-emoji="📅">📅</button>
+                            <button type="button" class="p-emoji-btn" data-emoji="🎯">🎯</button>
+                            <button type="button" class="p-emoji-btn" data-emoji="📝">📝</button>
+                            <button type="button" class="p-emoji-btn" data-emoji="🗓️">🗓️</button>
+                            <button type="button" class="p-emoji-btn" data-emoji="🏋️">🏋️</button>
+                            <button type="button" class="p-emoji-btn" data-emoji="📚">📚</button>
+                            <button type="button" class="p-emoji-btn" data-emoji="🧹">🧹</button>
+                            <button type="button" class="p-emoji-btn" data-emoji="🛒">🛒</button>
+                            <button type="button" class="p-emoji-btn" data-emoji="💰">💰</button>
+                            <button type="button" class="p-emoji-btn" data-emoji="✈️">✈️</button>
+                        </div>
+                        <input type="text" class="emoji-input" id="planCustomEmoji" placeholder="Свой смайлик" maxlength="20" autocomplete="off">
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label for="planName">Название плана</label>
+                    <input type="text" id="planName" placeholder="Например: Учебный план" required>
+                    <p class="form-error" id="planNameError" hidden>Введите название плана</p>
+                </div>
+                <div class="form-group">
+                    <label for="planPeriodDaysInput">Период</label>
+                    <div class="period-display" id="planPeriodDisplay" role="button" tabindex="0" title="Нажмите, чтобы ввести свой период">
+                        <span class="period-value" id="planPeriodValue">30 дней</span>
+                        <span class="period-label">изменить</span>
+                    </div>
+                    <div class="chip-row" id="planPeriodPresets">
+                        <button type="button" class="chip" data-days="1">1 дн</button>
+                        <button type="button" class="chip" data-days="7">1 нед</button>
+                        <button type="button" class="chip" data-days="14">2 нед</button>
+                        <button type="button" class="chip" data-days="28">4 нед</button>
+                        <button type="button" class="chip" data-days="30" data-selected="true">1 мес</button>
+                        <button type="button" class="chip" data-days="60">2 мес</button>
+                        <button type="button" class="chip" data-days="90">3 мес</button>
+                        <button type="button" class="chip" data-days="180">6 мес</button>
+                        <button type="button" class="chip" data-days="365">1 год</button>
+                    </div>
+                    <input type="hidden" id="planPeriodDaysInput" value="30">
+                    <input type="hidden" id="planPeriod" value="30">
+                </div>
+                <div class="form-group">
+                    <label>Цвет</label>
+                    <div class="color-picker" id="planColorPicker">
+                        <button type="button" class="p-color-btn selected" data-color="#1E9BF0" style="--c:#1E9BF0"></button>
+                        <button type="button" class="p-color-btn" data-color="#16B981" style="--c:#16B981"></button>
+                        <button type="button" class="p-color-btn" data-color="#F5A524" style="--c:#F5A524"></button>
+                        <button type="button" class="p-color-btn" data-color="#F0644B" style="--c:#F0644B"></button>
+                        <button type="button" class="p-color-btn" data-color="#7C6BF5" style="--c:#7C6BF5"></button>
+                        <button type="button" class="p-color-btn" data-color="#EC5B9E" style="--c:#EC5B9E"></button>
+                        <button type="button" class="p-color-btn" data-color="#E0413A" style="--c:#E0413A"></button>
+                        <button type="button" class="p-color-btn" data-color="#4A6076" style="--c:#4A6076"></button>
+                    </div>
+                </div>
+                <input type="hidden" id="planId" value="">
+                <button type="submit" class="btn-primary btn-full" id="planSubmitBtn">Создать</button>
+            </form>
+        </div>
+    </div>
+
+    <div class="modal-overlay" id="itemModalOverlay">
+        <div class="modal">
+            <div class="sheet-handle"></div>
+            <div class="modal-header">
+                <h3 id="itemModalTitle">Добавить задачу в план</h3>
+                <button class="btn-close" id="itemModalClose" type="button" aria-label="Закрыть">
+                    <svg class="ico"><use href="#i-close"></use></svg>
+                </button>
+            </div>
+            <form id="itemForm">
+                <div class="modal-actions" id="itemActions" hidden>
+                    <button type="button" class="ghost-btn" id="itemExtract">
+                        <svg class="ico"><use href="#i-eject"></use></svg>Вынести из плана
+                    </button>
+                    <button type="button" class="ghost-btn danger" id="itemDelete">
+                        <svg class="ico"><use href="#i-trash"></use></svg>Удалить
+                    </button>
+                </div>
+                <div class="form-group">
+                    <label>Иконка</label>
+                    <div class="emoji-group">
+                        <div class="emoji-picker">
+                            <button type="button" class="i-emoji-btn no-emoji-btn selected" data-emoji="" title="Без смайлика"></button>
+                            <button type="button" class="i-emoji-btn" data-emoji="📚">📚</button>
+                            <button type="button" class="i-emoji-btn" data-emoji="💧">💧</button>
+                            <button type="button" class="i-emoji-btn" data-emoji="🏃">🏃</button>
+                            <button type="button" class="i-emoji-btn" data-emoji="🏋️">🏋️</button>
+                            <button type="button" class="i-emoji-btn" data-emoji="💤">💤</button>
+                            <button type="button" class="i-emoji-btn" data-emoji="🍎">🍎</button>
+                            <button type="button" class="i-emoji-btn" data-emoji="💊">💊</button>
+                            <button type="button" class="i-emoji-btn" data-emoji="🧹">🧹</button>
+                            <button type="button" class="i-emoji-btn" data-emoji="🚶">🚶</button>
+                            <button type="button" class="i-emoji-btn" data-emoji="🎯">🎯</button>
+                            <button type="button" class="i-emoji-btn" data-emoji="📺">📺</button>
+                        </div>
+                        <input type="text" class="emoji-input" id="itemCustomEmoji" placeholder="Свой смайлик" maxlength="20" autocomplete="off">
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label for="itemName">Название</label>
+                    <input type="text" id="itemName" placeholder="Например: Прочитать главу" required>
+                    <p class="form-error" id="itemNameError" hidden>Введите название задачи</p>
+                </div>
+                <div class="form-group">
+                    <label for="itemPeriodDays">Период</label>
+                    <div class="period-display period-display-soft" id="itemPeriodDisplay">
+                        <span class="period-value" id="itemPeriodValue">30 дней</span>
+                        <span class="period-label">выберите ниже</span>
+                    </div>
+                    <div class="chip-row" id="itemPeriodPresets">
+                        <button type="button" class="chip" data-days="7">1 нед</button>
+                        <button type="button" class="chip" data-days="14">2 нед</button>
+                        <button type="button" class="chip" data-days="28">4 нед</button>
+                        <button type="button" class="chip" data-days="30" data-selected="true">1 мес</button>
+                        <button type="button" class="chip" data-days="60">2 мес</button>
+                        <button type="button" class="chip" data-days="90">3 мес</button>
+                        <button type="button" class="chip" data-days="180">6 мес</button>
+                        <button type="button" class="chip" data-days="365">1 год</button>
+                    </div>
+                    <input type="hidden" id="itemPeriodDays" value="30">
+                </div>
+                <input type="hidden" id="itemPlanId" value="">
+                <button type="submit" class="btn-primary btn-full" id="itemSubmitBtn">Добавить</button>
+            </form>
+        </div>
+    </div>
+
+    <div class="move-overlay" id="moveOverlay" hidden>
+        <div class="move-hint">
+            <span class="move-hint-text">Выберите план — задача переедет в него</span>
+            <span class="move-hint-cancel">нажмите мимо плана, чтобы отменить</span>
+        </div>
+    </div>
+
+    <div class="modal-overlay" id="historyOverlay">
+        <div class="modal">
+            <div class="sheet-handle"></div>
+            <div class="modal-header">
+                <h3>История выполнений</h3>
+                <button class="btn-close" id="historyClose" type="button" aria-label="Закрыть">
+                    <svg class="ico"><use href="#i-close"></use></svg>
+                </button>
+            </div>
+            <div class="history-list" id="historyList"></div>
+        </div>
+    </div>
+
+    <div class="confirm-overlay" id="confirmOverlay">
+        <div class="confirm-box">
+            <p class="confirm-text" id="confirmText"></p>
+            <div class="confirm-actions">
+                <button class="btn-cancel" id="confirmCancel" type="button">Отмена</button>
+                <button class="btn-danger" id="confirmOk" type="button">Удалить</button>
             </div>
         </div>
+    </div>
 
-        <div class="modal-overlay" id="timeInputOverlay">
-            <div class="modal">
-                <div class="modal-header">
-                    <h3>Напоминание</h3>
-                    <button class="btn-close" id="timeInputClose" type="button">&times;</button>
-                </div>
-                <div class="time-body">
-                    <div class="time-presets" id="timePresets">
-                        <button type="button" class="preset-btn time-preset" data-time="08:00">Утро</button>
-                        <button type="button" class="preset-btn time-preset" data-time="12:00">День</button>
-                        <button type="button" class="preset-btn time-preset" data-time="19:00">Вечер</button>
-                        <button type="button" class="preset-btn time-preset" data-time="22:00">Ночь</button>
-                    </div>
-                    <div class="time-wheel" id="timeWheel">
-                        <div class="wheel-col" id="wheelHours"></div>
-                        <span class="wheel-colon">:</span>
-                        <div class="wheel-col" id="wheelMinutes"></div>
-                    </div>
-                    <div class="time-manual">
-                        <input type="text" id="timeManual" placeholder="ЧЧ:ММ" inputmode="numeric" maxlength="5" autocomplete="off">
-                        <button type="button" class="btn-cancel" id="timeClear">Не напоминать</button>
-                    </div>
-                    <p class="form-error" id="timeError" hidden>Формат «ЧЧ:ММ», например 09:30</p>
-                </div>
-                <div class="modal-footer">
-                    <button type="button" class="btn-cancel" id="timeCancel">Отмена</button>
-                    <button type="button" class="btn-primary" id="timeOk">Готово</button>
+    <div class="period-input-overlay" id="periodInputOverlay">
+        <div class="period-input-box">
+            <h4>Свой период</h4>
+            <p class="period-input-hint">Введите количество дней</p>
+            <input type="number" class="period-input-field" id="periodCustomDays" min="1" max="365" value="30" inputmode="numeric">
+            <p class="period-input-result" id="periodCustomResult"></p>
+            <div class="confirm-actions">
+                <button class="btn-cancel" id="periodCustomCancel" type="button">Отмена</button>
+                <button class="btn-primary" id="periodCustomOk" type="button">Сохранить</button>
             </div>
         </div>
-        </div>
+    </div>
 
+    <div class="modal-overlay" id="timeInputOverlay">
+        <div class="modal">
+            <div class="sheet-handle"></div>
+            <div class="modal-header">
+                <h3>Напоминание</h3>
+                <button class="btn-close" id="timeInputClose" type="button" aria-label="Закрыть">
+                    <svg class="ico"><use href="#i-close"></use></svg>
+                </button>
+            </div>
+            <div class="time-body">
+                <div class="chip-row chip-row-center" id="timePresets">
+                    <button type="button" class="chip time-preset" data-time="08:00">Утро</button>
+                    <button type="button" class="chip time-preset" data-time="12:00">День</button>
+                    <button type="button" class="chip time-preset" data-time="19:00">Вечер</button>
+                    <button type="button" class="chip time-preset" data-time="22:00">Ночь</button>
+                </div>
+                <div class="time-wheel" id="timeWheel">
+                    <div class="wheel-col" id="wheelHours"></div>
+                    <span class="wheel-colon">:</span>
+                    <div class="wheel-col" id="wheelMinutes"></div>
+                </div>
+                <div class="time-manual">
+                    <input type="text" id="timeManual" placeholder="ЧЧ:ММ" inputmode="numeric" maxlength="5" autocomplete="off">
+                    <button type="button" class="btn-cancel" id="timeClear">Не напоминать</button>
+                </div>
+                <p class="form-error" id="timeError" hidden>Формат «ЧЧ:ММ», например 09:30</p>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn-cancel" id="timeCancel">Отмена</button>
+                <button type="button" class="btn-primary" id="timeOk">Готово</button>
+            </div>
+        </div>
     </div>
 
     <div class="modal-overlay" id="welcomeOverlay">
         <div class="modal welcome-modal">
-            <div class="welcome-logo">🎯</div>
+            <div class="sheet-handle"></div>
+            <div class="welcome-logo">
+                <svg class="ico"><use href="#i-target"></use></svg>
+            </div>
             <h2 class="welcome-title">Veyo Tracker</h2>
             <p class="welcome-subtitle">Трекер задач на период</p>
             <ul class="welcome-features">
-                <li><span class="wf-ico">📅</span><span>Задача на свой срок — от 1 дня до года, с планом на период</span></li>
-                <li><span class="wf-ico">✅</span><span>Отмечай дни выполнения — следи за серией и прогрессом</span></li>
-                <li><span class="wf-ico">🔔</span><span>Напоминания приходят в Telegram в нужное время</span></li>
-                <li><span class="wf-ico">🔄</span><span>Данные синхронизируются между твоими устройствами</span></li>
+                <li><span class="wf-ico"><svg class="ico"><use href="#i-calendar"></use></svg></span><span>Задача на свой срок — от 1 дня до года, с планом на период</span></li>
+                <li><span class="wf-ico"><svg class="ico"><use href="#i-check"></use></svg></span><span>Отмечай дни выполнения — следи за серией и прогрессом</span></li>
+                <li><span class="wf-ico"><svg class="ico"><use href="#i-bell"></use></svg></span><span>Напоминания приходят в Telegram в нужное время</span></li>
+                <li><span class="wf-ico"><svg class="ico"><use href="#i-history"></use></svg></span><span>Данные синхронизируются между твоими устройствами</span></li>
             </ul>
             <button type="button" class="btn-primary btn-full" id="welcomeStart">Начать</button>
         </div>
     </div>
 
-    <!-- v12 (10.09.2026): warn удалён (одно уведомление в время задачи); /api/sync и /api/state авторизуются по initData; настройка leadMin убрана из UI. Синк (вариант B) — CloudStorage НЕ возвращать (см. шапку секции синхронизации в js/app.js). -->
-    <script src="js/app.js?v=13"></script>
+    <script src="js/app.js?v=14"></script>
 </body>
 </html>
