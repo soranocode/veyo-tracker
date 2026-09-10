@@ -54,41 +54,26 @@
 
     function formatPeriodFromDate(days, startDate) {
         days = parseInt(days, 10) || 0;
-        if (days <= 6) return pluralDays(days, 'день', 'дня', 'дней');
         if (days < 30) return pluralDays(days, 'день', 'дня', 'дней');
-        
-        // Специальный случай: 365 дней = 1 год = 12 месяцев (без дней)
         if (days === 365) return pluralDays(12, 'месяц', 'месяца', 'месяцев');
 
-        // Разбор стартовой даты
+        // Календарные месяцы от стартовой даты: сколько целых месяцев укладывается в период
         const [year, month, day] = startDate.split('-').map(Number);
+        let cursor = new Date(year, month - 1, day);
         let remaining = days;
-        let months_count = 0;
-        let current_year = year;
-        let current_month = month;
+        let months = 0;
 
-        // Считаем полные месяцы от начальной даты
-        while (remaining > 0) {
-            // Получить количество дней в текущем месяце (от текущего дня)
-            const daysInCurrentMonth = new Date(current_year, current_month, 0).getDate();
-            const daysLeftInMonth = daysInCurrentMonth - day + 1;
-
-            if (remaining >= daysLeftInMonth) {
-                remaining -= daysLeftInMonth;
-                months_count++;
-                // Переходим на следующий месяц
-                current_month++;
-                if (current_month > 12) {
-                    current_month = 1;
-                    current_year++;
-                }
-            } else {
-                break;
-            }
+        while (true) {
+            const next = new Date(cursor.getFullYear(), cursor.getMonth() + 1, cursor.getDate());
+            const monthLen = Math.round((next - cursor) / 86400000);
+            if (monthLen <= 0 || remaining < monthLen) break;
+            remaining -= monthLen;
+            months++;
+            cursor = next;
         }
 
-        let parts = [];
-        if (months_count > 0) parts.push(pluralDays(months_count, 'месяц', 'месяца', 'месяцев'));
+        const parts = [];
+        if (months > 0) parts.push(pluralDays(months, 'месяц', 'месяца', 'месяцев'));
         if (remaining > 0) {
             const weeks = Math.floor(remaining / 7);
             const d = remaining % 7;
@@ -392,6 +377,11 @@
         return pluralDays(n, 'день', 'дня', 'дней');
     }
 
+    // только слово без числа: «12 из 30 дней»
+    function dayWord(n) {
+        return pld(n).replace(/^\d+\s*/, '');
+    }
+
     function formatDate(d) {
         const months = [
             'января', 'февраля', 'марта', 'апреля', 'мая', 'июня',
@@ -416,14 +406,15 @@
     }
 
     function applyTheme(dark) {
+        const toggle = $('#themeToggle');
         if (dark) {
             document.documentElement.setAttribute('data-theme', 'dark');
-            $('#themeToggle').textContent = '☀️';
-            $('#themeToggle').title = 'Включить светлую тему';
+            toggle.innerHTML = icon('sun');
+            toggle.title = 'Включить светлую тему';
         } else {
             document.documentElement.removeAttribute('data-theme');
-            $('#themeToggle').textContent = '🌙';
-            $('#themeToggle').title = 'Включить тёмную тему';
+            toggle.innerHTML = icon('moon');
+            toggle.title = 'Включить тёмную тему';
         }
 
         if (window.AndroidBridge && window.AndroidBridge.setTheme) {
@@ -436,7 +427,7 @@
 
         if (tg && tg.setHeaderColor) {
             try {
-                tg.setHeaderColor(dark ? '#13233d' : '#e9f6fe');
+                tg.setHeaderColor(dark ? '#0d1724' : '#eff5fb');
             } catch {
                 /* нет поддержки setHeaderColor */
             }
@@ -506,19 +497,41 @@
         }, 0);
     }
 
-    function calculateStats() {
-        const t = today();
-        let total = habits.length;
-        plans.forEach(p => {
-            p.items.forEach(it => {
-                total++;
-            });
+    // Средний прогресс по периодам: у задачи — свои выполненные дни / её период
+    function periodProgressPct() {
+        const fractions = [];
+        habits.forEach(h => {
+            if (isPeriodless(h)) return;
+            fractions.push(Math.min(countDaysDone(h) / h.periodDays, 1));
         });
+        plans.forEach(p => {
+            p.items.forEach(it => fractions.push(Math.min(planItemProgressFrac(p, it), 1)));
+        });
+        if (fractions.length === 0) return 0;
+        return Math.round((fractions.reduce((a, b) => a + b, 0) / fractions.length) * 100);
+    }
+
+    function calculateStats() {
+        let total = habits.length;
+        plans.forEach(p => { total += p.items.length; });
+        total = Math.max(total, stats.today);
+
+        const doneToday = stats.today;
+        const ratio = total > 0 ? Math.min(doneToday / total, 1) : 0;
 
         $('#statStreak').textContent = calculateStreak();
-        $('#statToday').textContent = `${stats.today}/${Math.max(total, stats.today)}`;
+        $('#statToday').textContent = `${doneToday} из ${total}`;
         $('#statTotal').textContent = stats.total;
-        $('#dayProgress').textContent = '';
+        $('#statPeriod').textContent = `${periodProgressPct()}%`;
+        $('#dayProgress').textContent = total > 0 ? `${doneToday} из ${total}` : '';
+
+        const ring = $('#heroRing .ring-value');
+        if (ring) {
+            const circumference = 2 * Math.PI * 18;
+            ring.style.strokeDasharray = circumference.toFixed(1);
+            ring.style.strokeDashoffset = (circumference * (1 - ratio)).toFixed(1);
+        }
+        $('#heroRingText').textContent = `${Math.round(ratio * 100)}%`;
     }
 
     // ===================== Счётчики (постоянные, не зависят от удаления задач) =====================
@@ -635,7 +648,7 @@
                     <div class="history-name">${escapeHtml(h.name)}</div>
                     <div class="history-date">${formatHistoryDate(h.date)}</div>
                 </div>
-                <button type="button" class="history-del" title="Удалить из истории" aria-label="Удалить из истории">🗑</button>
+                <button type="button" class="mini-btn danger history-del" title="Удалить из истории" aria-label="Удалить из истории">${icon('trash')}</button>
             `;
             row.querySelector('.history-del').addEventListener('click', () => {
                 const entry = history.find(x => x.id === h.id && x.date === h.date);
@@ -682,7 +695,7 @@
         div.className = 'empty-state';
         div.id = 'emptyState';
         div.innerHTML = `
-            <button type="button" class="empty-icon" id="emptyAddBtn" title="Добавить задачу" aria-label="Добавить задачу">📋</button>
+            <button type="button" class="empty-icon" id="emptyAddBtn" title="Добавить задачу" aria-label="Добавить задачу">${icon('plus')}</button>
             <p>Добавьте первую задачу, чтобы начать отслеживание</p>
         `;
         div.querySelector('#emptyAddBtn').addEventListener('click', () => openModal());
@@ -693,6 +706,105 @@
         const div = document.createElement('div');
         div.textContent = str;
         return div.innerHTML;
+    }
+
+    // Иконка из спрайта в index.html
+    function icon(name, cls) {
+        return `<svg class="ico${cls ? ' ' + cls : ''}"><use href="#i-${name}"></use></svg>`;
+    }
+
+    // Полупрозрачная подложка под цвет задачи (фон плашки с эмодзи, бейджа процента)
+    function colorSoft(hex, alpha) {
+        const m = /^#?([0-9a-f]{6})$/i.exec(hex || '');
+        if (!m) return 'var(--primary-soft)';
+        const n = parseInt(m[1], 16);
+        return `rgba(${(n >> 16) & 255}, ${(n >> 8) & 255}, ${n & 255}, ${alpha})`;
+    }
+
+    function applyCardColor(el, color) {
+        el.style.setProperty('--c', color);
+        el.style.setProperty('--c-soft', colorSoft(color, 0.14));
+    }
+
+    // ---- Свайп по карточке: вправо — отметить, влево — удалить ----
+    const SWIPE_TRIGGER = 78;
+
+    function attachSwipe(wrap, card, handlers) {
+        let startX = 0;
+        let startY = 0;
+        let dx = 0;
+        let active = false;
+        let decided = false;
+
+        function reset() {
+            wrap.classList.remove('swiping', 'dragging');
+            card.style.transform = '';
+            active = false;
+            decided = false;
+            dx = 0;
+        }
+
+        card.addEventListener('touchstart', (e) => {
+            if (e.touches.length !== 1) return;
+            startX = e.touches[0].clientX;
+            startY = e.touches[0].clientY;
+            active = true;
+            decided = false;
+            dx = 0;
+        }, { passive: true });
+
+        card.addEventListener('touchmove', (e) => {
+            if (!active) return;
+            const x = e.touches[0].clientX - startX;
+            const y = e.touches[0].clientY - startY;
+            if (!decided) {
+                // вертикальный жест отдаём скроллу страницы
+                if (Math.abs(y) > Math.abs(x)) { active = false; return; }
+                if (Math.abs(x) < 8) return;
+                decided = true;
+                wrap.classList.add('swiping', 'dragging');
+            }
+            if (x > 0 && !handlers.onRight) return;
+            if (x < 0 && !handlers.onLeft) return;
+            dx = x;
+            card.style.transform = `translateX(${dx}px)`;
+        }, { passive: true });
+
+        card.addEventListener('touchend', () => {
+            if (!active || !decided) { reset(); return; }
+            const done = dx;
+            wrap.classList.remove('dragging');
+            if (done >= SWIPE_TRIGGER && handlers.onRight) {
+                card.style.transform = '';
+                wrap.classList.remove('swiping');
+                active = false;
+                handlers.onRight();
+                return;
+            }
+            if (done <= -SWIPE_TRIGGER && handlers.onLeft) {
+                card.style.transform = 'translateX(-110%)';
+                active = false;
+                setTimeout(() => handlers.onLeft(), 180);
+                return;
+            }
+            reset();
+        });
+
+        card.addEventListener('touchcancel', reset);
+    }
+
+    function swipeWrap(card, handlers) {
+        const wrap = document.createElement('div');
+        wrap.className = 'swipe';
+        wrap.innerHTML = `
+            <div class="swipe-bg">
+                <span class="swipe-bg-left">${icon('check')}</span>
+                <span class="swipe-bg-right">${icon('trash')}</span>
+            </div>
+        `;
+        wrap.appendChild(card);
+        attachSwipe(wrap, card, handlers);
+        return wrap;
     }
 
     function normalizeEmoji(value) {
@@ -745,38 +857,33 @@
     }
 
     function renderPlanItemCard(plan, item, t, end) {
-        const count = getPlanItemCount(plan, item.id, t);
-        const done = count > 0;
-        const progress = done ? 100 : 0;
-        const todayPct = done ? 100 : 0;
-        const itemPct = Math.round(planItemProgressFrac(plan, item) * 100);
+        const done = getPlanItemCount(plan, item.id, t) > 0;
+        const doneDays = planItemDoneDays(plan, item);
+        const period = Math.min(Math.max(parseInt(item.periodDays, 10) || DEFAULT_PERIOD, 1), 365);
+        const pct = Math.round(planItemProgressFrac(plan, item) * 100);
         const inPeriod = t >= plan.startDate && t <= end;
+        const action = inPeriod ? (done ? 'Отменить выполнение' : 'Отметить выполненной') : 'Сегодня вне периода';
+
         const card = document.createElement('div');
-        card.className = `habit-card plan-item-card${done ? ' completed' : ''}`;
-        card.style.setProperty('--habit-color', plan.color);
+        card.className = `habit-card${done ? ' completed' : ''}`;
+        applyCardColor(card, plan.color);
+        card.style.setProperty('--pct', `${pct}%`);
+        card.dataset.plan = plan.id;
+        card.dataset.item = item.id;
         card.innerHTML = `
-            <div class="habit-emoji">${item.emoji}</div>
+            <div class="habit-emoji${item.emoji ? '' : ' no-emoji'}">${item.emoji || ''}</div>
             <div class="habit-info">
-                <div class="habit-name-row">
-                    <div class="habit-name">${escapeHtml(item.name)}</div>
-                    <span class="habit-pct" title="Выполнение сегодня">${todayPct}%</span>
-                </div>
-                <div class="habit-progress-bar">
-                    <div class="habit-progress-fill" style="width:${progress}%;background:${plan.color}"></div>
-                </div>
-                <div class="habit-count">${done ? '✓ сегодня' : 'не сделано'} • ${itemPct}% за период</div>
+                <div class="habit-name">${escapeHtml(item.name)}</div>
+                <div class="habit-meta">${doneDays} из ${period} ${dayWord(period)}</div>
             </div>
-            <div class="habit-actions">
-                <button class="btn-check${done ? ' checked' : ''}" data-plan="${plan.id}" data-item="${item.id}"
-                    title="${inPeriod ? (done ? 'Отменить шаг' : 'Отметить') : 'Сегодня вне периода'}"
-                    ${inPeriod ? '' : 'disabled'}>${done ? '✓' : '+'}</button>
-                <button class="btn-edit-plan-item" data-plan="${plan.id}" data-item="${item.id}"
-                    title="Редактировать задачу" aria-label="Редактировать задачу">✏️</button>
-                <button class="btn-extract-plan" data-plan="${plan.id}" data-item="${item.id}"
-                    title="Сделать отдельной задачей" aria-label="Сделать отдельной задачей">📤</button>
-            </div>
+            <button class="btn-check${done ? ' checked' : ''}" data-plan="${plan.id}" data-item="${item.id}"
+                title="${action}" aria-label="${action}" ${inPeriod ? '' : 'disabled'}>${icon(done ? 'check' : 'plus')}</button>
         `;
-        return card;
+
+        return swipeWrap(card, {
+            onRight: inPeriod ? () => togglePlanItem(plan, item.id) : null,
+            onLeft: () => confirmRemovePlanItem(plan.id, item.id)
+        });
     }
 
     function createPlanGroupCard(plan) {
@@ -788,16 +895,12 @@
         const group = document.createElement('div');
         group.className = 'plan-group';
         group.dataset.planId = plan.id;
-        group.style.setProperty('--habit-color', plan.color);
+        applyCardColor(group, plan.color);
         group.innerHTML = `
             <div class="plan-group-head">
                 <div class="plan-group-emoji">${plan.emoji}</div>
-                <div class="plan-group-info">
-                    <div class="plan-group-name-row">
-                        <div class="plan-group-name">${escapeHtml(plan.name)}</div>
-                        <span class="habit-pct" title="Прогресс плана">${pctText}</span>
-                    </div>
-                </div>
+                <div class="plan-group-name">${escapeHtml(plan.name)}</div>
+                <span class="pct-badge" title="Прогресс плана">${pctText}</span>
             </div>
         `;
 
@@ -828,62 +931,54 @@
         });
 
         habits.forEach((habit, index) => {
-            const count = getHabitCount(habit, t);
-            const done = count > 0;
-            const progress = done ? 100 : 0;
-            const todayPct = done ? 100 : 0;
+            const done = getHabitCount(habit, t) > 0;
             const end = endDateOf(habit);
             const noPeriod = isPeriodless(habit);
             const inPeriod = noPeriod || (t >= habit.startDate && t <= end);
             const finished = !noPeriod && t > end;
-            const remaining = Math.max(diffDays(t, end) + 1, 0);
             const doneDays = countDaysDone(habit);
-            const overallPct = noPeriod ? null : Math.round(Math.min((doneDays / habit.periodDays) * 100, 100));
+            const pct = noPeriod ? 0 : Math.round(Math.min((doneDays / habit.periodDays) * 100, 100));
 
-            let status;
+            let meta;
             if (noPeriod) {
-                status = `${done ? '✓ сегодня' : 'не сделано'} • выполнено всего: ${habit.lifetimeCount || 0}`;
+                meta = `без периода <span class="sep">•</span> выполнено ${habit.lifetimeCount || 0}`;
             } else if (finished) {
-                status = `Выполнено ${doneDays} из ${habit.periodDays} ${pld(habit.periodDays)} • ${overallPct}% за период`;
+                meta = `период завершён <span class="sep">•</span> ${doneDays} из ${habit.periodDays} ${dayWord(habit.periodDays)}`;
             } else {
-                status = `${done ? '✓ сегодня' : 'не сделано'} • ${overallPct}% за период`;
+                meta = `${doneDays} из ${habit.periodDays} ${dayWord(habit.periodDays)}`;
             }
-            if (habit.reminderTime) status += ` • 🔔 ${habit.reminderTime}`;
+            if (habit.reminderTime) {
+                meta += ` <span class="sep">•</span> ${icon('bell')} ${habit.reminderTime}`;
+            }
 
+            const action = inPeriod ? (done ? 'Отменить выполнение' : 'Отметить выполненной') : 'Сегодня вне периода';
             const card = document.createElement('div');
-            card.className = `habit-card${done ? ' completed' : ''}${finished ? ' finished' : ''}`;
-            card.style.setProperty('--habit-color', habit.color);
-            card.style.animationDelay = `${index * 0.05}s`;
+            card.className = `habit-card${done ? ' completed' : ''}${finished ? ' finished' : ''}${noPeriod ? ' no-progress' : ''}`;
+            applyCardColor(card, habit.color);
+            card.style.setProperty('--pct', `${pct}%`);
             card.dataset.id = habit.id;
 
             card.innerHTML = `
                 <div class="habit-emoji${habit.emoji ? '' : ' no-emoji'}">${habit.emoji || ''}</div>
                 <div class="habit-info">
-                    <div class="habit-name-row">
-                        <div class="habit-name">${escapeHtml(habit.name)}</div>
-                        <span class="habit-pct" title="Выполнение сегодня">${todayPct}%</span>
-                    </div>
-                    <div class="habit-progress-bar">
-                        <div class="habit-progress-fill" style="width:${progress}%;background:${habit.color}"></div>
-                    </div>
-                    <div class="habit-count">${status}</div>
+                    <div class="habit-name">${escapeHtml(habit.name)}</div>
+                    <div class="habit-meta">${meta}</div>
                 </div>
-                <div class="habit-actions">
-                    <button class="btn-check${done ? ' checked' : ''}" data-id="${habit.id}"
-                        title="${inPeriod ? (done ? 'Отменить шаг' : 'Отметить') : 'Сегодня вне периода'}"
-                        aria-label="${inPeriod ? (done ? 'Отменить шаг' : 'Отметить') : 'Сегодня вне периода'}"
-                        ${inPeriod ? '' : 'disabled'}>${done ? '✓' : '+'}</button>
-                    ${plans.length > 0 ? `<button class="btn-move-to-plan" data-id="${habit.id}" title="Перенести в план" aria-label="Перенести в план">📋</button>` : ''}
-                    <button class="btn-edit" data-id="${habit.id}" title="Редактировать" aria-label="Редактировать">✏️</button>
-                    <button class="btn-delete" data-id="${habit.id}" title="Удалить" aria-label="Удалить">🗑</button>
-                </div>
+                <button class="btn-check${done ? ' checked' : ''}" data-id="${habit.id}"
+                    title="${action}" aria-label="${action}" ${inPeriod ? '' : 'disabled'}>${icon(done ? 'check' : 'plus')}</button>
             `;
 
-            list.appendChild(card);
+            const wrap = swipeWrap(card, {
+                onRight: inPeriod ? () => toggleHabit(habit.id) : null,
+                onLeft: () => deleteHabit(habit.id)
+            });
+            wrap.style.animationDelay = `${Math.min(index, 8) * 0.04}s`;
+            list.appendChild(wrap);
         });
 
         list.querySelectorAll('.btn-check').forEach(btn => {
-            btn.addEventListener('click', () => {
+            btn.addEventListener('click', (e) => {
+                e.stopPropagation();
                 if (btn.dataset.plan) {
                     const plan = plans.find(p => p.id === btn.dataset.plan);
                     if (plan) togglePlanItem(plan, btn.dataset.item);
@@ -893,31 +988,13 @@
             });
         });
 
-        list.querySelectorAll('.btn-edit').forEach(btn => {
-            btn.addEventListener('click', () => openModal(btn.dataset.id));
-        });
-
-        list.querySelectorAll('.btn-move-to-plan').forEach(btn => {
-            btn.addEventListener('click', () => openMoveToPlanDialog(btn.dataset.id));
-        });
-
-        list.querySelectorAll('.btn-extract-plan').forEach(btn => {
-            btn.addEventListener('click', () => movePlanItemToHabit(btn.dataset.plan, btn.dataset.item));
-        });
-
-        list.querySelectorAll('.btn-edit-plan-item').forEach(btn => {
-            btn.addEventListener('click', () => openItemModal(btn.dataset.plan, btn.dataset.item));
-        });
-
-        list.querySelectorAll('.btn-delete').forEach(btn => {
-            btn.addEventListener('click', () => deleteHabit(btn.dataset.id));
-        });
-
+        // Тап по карточке открывает редактирование — там же перенос, вынос и удаление
         list.querySelectorAll('.habit-card').forEach(card => {
             card.addEventListener('click', (e) => {
                 if (e.target.closest('button')) return;
-                const editBtn = card.querySelector('.btn-edit');
-                if (editBtn) openModal(editBtn.dataset.id);
+                if (card.closest('.swipe.swiping')) return;
+                if (card.dataset.plan) openItemModal(card.dataset.plan, card.dataset.item);
+                else if (card.dataset.id) openModal(card.dataset.id);
             });
         });
 
@@ -1121,8 +1198,9 @@
         }
 
         $$('#habitsList .habit-card[data-id="' + habitId + '"]').forEach(card => {
-            card.classList.add('leaving');
-            card.style.pointerEvents = 'none';
+            const wrap = card.closest('.swipe') || card;
+            wrap.classList.add('leaving');
+            wrap.style.pointerEvents = 'none';
         });
 
         setTimeout(runMove, 420);
@@ -1205,7 +1283,10 @@
         if (!habit) return;
 
         const ok = await showConfirm(`Удалить задачу «${habit.name}»?`);
-        if (!ok) return;
+        if (!ok) {
+            renderHabits(); // вернуть карточку, уехавшую при свайпе
+            return;
+        }
 
         habits = habits.filter(h => h.id !== id);
         save();
@@ -1366,7 +1447,7 @@
         const div = document.createElement('div');
         div.className = 'empty-state';
         div.innerHTML = `
-            <button type="button" class="empty-icon" title="Создать план" aria-label="Создать план">🗓️</button>
+            <button type="button" class="empty-icon" title="Создать план" aria-label="Создать план">${icon('calendar')}</button>
             <p>Создайте план — добавьте в него задачи и отмечайте по дням</p>
         `;
         div.querySelector('.empty-icon').addEventListener('click', () => openPlanModal());
@@ -1376,21 +1457,21 @@
     function renderPlanItem(plan, item, t, end) {
         const done = isPlanItemDone(plan, item, t);
         const inPeriod = t >= plan.startDate && t <= end;
+        const period = Math.min(Math.max(parseInt(item.periodDays, 10) || DEFAULT_PERIOD, 1), 365);
+        const action = inPeriod ? (done ? 'Отменить выполнение' : 'Отметить выполненной') : 'Сегодня вне периода';
         return `
             <div class="plan-item${done ? ' done' : ''}">
-                <div class="plan-item-emoji">${item.emoji}</div>
+                <div class="plan-item-emoji">${item.emoji || ''}</div>
                 <div class="plan-item-info">
                     <div class="plan-item-name">${escapeHtml(item.name)}</div>
+                    <div class="plan-item-sub">${planItemDoneDays(plan, item)} из ${period} ${dayWord(period)}</div>
                 </div>
                 <div class="plan-item-actions">
-                    <button type="button" class="plan-item-btn plan-item-up" data-plan="${plan.id}" data-item="${item.id}" title="Выше">▲</button>
-                    <button type="button" class="plan-item-btn plan-item-down" data-plan="${plan.id}" data-item="${item.id}" title="Ниже">▼</button>
-                    <button type="button" class="plan-item-btn plan-item-edit" data-plan="${plan.id}" data-item="${item.id}" title="Редактировать задачу">✏️</button>
-                    <button type="button" class="plan-item-btn plan-item-extract" data-plan="${plan.id}" data-item="${item.id}" title="Сделать отдельной задачей">📤</button>
-                    <button type="button" class="plan-item-btn plan-item-remove" data-plan="${plan.id}" data-item="${item.id}" title="Удалить задачу">✕</button>
+                    <button type="button" class="mini-btn plan-item-up" data-plan="${plan.id}" data-item="${item.id}" title="Выше" aria-label="Выше">${icon('up')}</button>
+                    <button type="button" class="mini-btn plan-item-down" data-plan="${plan.id}" data-item="${item.id}" title="Ниже" aria-label="Ниже">${icon('down')}</button>
+                    <button type="button" class="mini-btn plan-item-edit" data-plan="${plan.id}" data-item="${item.id}" title="Редактировать задачу" aria-label="Редактировать задачу">${icon('pencil')}</button>
                     <button type="button" class="plan-item-check${done ? ' checked' : ''}" data-plan="${plan.id}" data-item="${item.id}"
-                        title="${inPeriod ? (done ? 'Отменить шаг' : 'Отметить') : 'Сегодня вне периода'}"
-                        ${inPeriod ? '' : 'disabled'}>${done ? '✓' : '+'}</button>
+                        title="${action}" aria-label="${action}" ${inPeriod ? '' : 'disabled'}>${icon(done ? 'check' : 'plus')}</button>
                 </div>
             </div>
         `;
@@ -1415,26 +1496,25 @@
 
             const card = document.createElement('div');
             card.className = 'plan-card';
-            card.style.setProperty('--habit-color', plan.color);
+            applyCardColor(card, plan.color);
             card.innerHTML = `
                 <div class="plan-card-head">
+                    <div class="plan-card-emoji">${plan.emoji}</div>
                     <div class="plan-card-title">
-                        <div class="plan-card-emoji">${plan.emoji}</div>
                         <div class="plan-card-name">${escapeHtml(plan.name)}</div>
-                        <span class="habit-pct" title="Прогресс плана">${pctText}</span>
+                        <div class="plan-card-sub">${plan.periodDays} ${dayWord(plan.periodDays)} • до ${formatShort(end)}</div>
                     </div>
+                    <span class="pct-badge" title="Прогресс плана">${pctText}</span>
                     <div class="plan-card-actions">
-                        <button type="button" class="btn-edit plan-card-edit" data-plan="${plan.id}" title="Редактировать план">✏️</button>
-                        <button type="button" class="btn-delete plan-card-delete" data-plan="${plan.id}" title="Удалить план">🗑️</button>
+                        <button type="button" class="mini-btn plan-card-edit" data-plan="${plan.id}" title="Редактировать план" aria-label="Редактировать план">${icon('pencil')}</button>
+                        <button type="button" class="mini-btn danger plan-card-delete" data-plan="${plan.id}" title="Удалить план" aria-label="Удалить план">${icon('trash')}</button>
                     </div>
                 </div>
-                <div class="plan-card-meta">
-                    <span>${formatPeriodFromDate(plan.periodDays, plan.startDate)}</span>
-                </div>
+                <div class="plan-card-bar"><span style="width:${pct === null ? 0 : pct}%"></span></div>
                 <div class="plan-items">
                     ${plan.items.map(item => renderPlanItem(plan, item, t, end)).join('')}
                 </div>
-                <button type="button" class="plan-add-item" data-add-item="${plan.id}">+ Добавить задачу</button>
+                <button type="button" class="plan-add-item" data-add-item="${plan.id}">${icon('plus')} Добавить задачу</button>
             `;
             list.appendChild(card);
         });
@@ -1445,7 +1525,7 @@
         const input = $('#planPeriodDaysInput');
         const hidden = $('#planPeriod');
         const display = $('#planPeriodValue');
-        const presets = $$('#planPeriodPresets .preset-btn');
+        const presets = $$('#planPeriodPresets .chip');
         if (input) input.value = value;
         if (hidden) hidden.value = value;
         if (display) display.textContent = formatPeriod(value);
@@ -1518,7 +1598,7 @@
         value = Math.min(Math.max(parseInt(value, 10) || DEFAULT_PERIOD, 1), 365);
         const input = $('#itemPeriodDays');
         const display = $('#itemPeriodValue');
-        const presets = $$('#itemPeriodPresets .preset-btn');
+        const presets = $$('#itemPeriodPresets .chip');
         if (input) input.value = value;
         if (display) display.textContent = formatPeriod(value);
         if (presets.length) {
@@ -1557,6 +1637,7 @@
             });
             $('#itemCustomEmoji').value = hasPreset ? '' : item.emoji;
             setItemPeriod(item.periodDays);
+            $('#itemActions').hidden = false;
         } else {
             editingItemId = null;
             itemUserEditedName = false;
@@ -1569,6 +1650,7 @@
             });
             $('#itemCustomEmoji').value = '';
             setItemPeriod(30);
+            $('#itemActions').hidden = true;
         }
         $('#itemNameError').hidden = true;
         overlay.classList.add('active');
@@ -1669,6 +1751,19 @@
         showToast('Задача сохранена');
     }
 
+    async function confirmRemovePlanItem(planId, itemId) {
+        const plan = plans.find(p => p.id === planId);
+        const item = plan && plan.items.find(i => i.id === itemId);
+        if (!item) return;
+        const ok = await showConfirm(`Удалить задачу «${item.name}» из плана «${plan.name}»?`);
+        if (!ok) {
+            renderHabits();
+            return;
+        }
+        removePlanItem(planId, itemId);
+        showToast('Задача удалена из плана');
+    }
+
     function removePlanItem(planId, itemId) {
         const plan = plans.find(p => p.id === planId);
         if (!plan) return;
@@ -1698,9 +1793,10 @@
         const isHabits = tab === 'habits';
         $('#viewHabits').hidden = !isHabits;
         $('#viewPlans').hidden = isHabits;
-        $('#statsBar').hidden = !isHabits;
         $$('.tab').forEach(t => t.classList.toggle('active', t.dataset.tab === tab));
-        $('#addHabitBtn').textContent = isHabits ? '+ Задача' : '+ План';
+        const fab = $('#addHabitBtn');
+        fab.title = isHabits ? 'Новая задача' : 'Новый план';
+        fab.setAttribute('aria-label', fab.title);
         if (isHabits) {
             renderHabits();
             renderPlan();
@@ -1719,10 +1815,9 @@
     function setPeriod(value) {
         value = Math.min(Math.max(parseInt(value, 10) || DEFAULT_PERIOD, 1), 365);
         const slider = $('#periodSlider');
-        const presets = $$('#periodPresets .preset-btn');
+        const presets = $$('#periodPresets .chip');
         if (slider) slider.value = value;
         $('#habitPeriod').value = value;
-        $('#periodCustomDaysInline').value = value;
         $('#periodDisplay .period-value').textContent = formatPeriod(value);
         $('#periodDisplay .period-label').textContent = 'изменить';
         if (presets.length) {
@@ -1859,10 +1954,27 @@
         updateBackButton();
     }
 
-    function openPeriodInput() {        const field = $('#periodCustomDays');
+    // Ручной ввод периода общий для задачи, плана и задачи плана
+    let periodInputTarget = 'habit';
+
+    function currentPeriodOf(target) {
+        if (target === 'plan') return $('#planPeriod').value;
+        if (target === 'item') return $('#itemPeriodDays').value;
+        return $('#habitPeriod').value;
+    }
+
+    function applyPeriodTo(target, value) {
+        if (target === 'plan') setPlanPeriod(value);
+        else if (target === 'item') setItemPeriod(value);
+        else setPeriod(value);
+    }
+
+    function openPeriodInput(target) {
+        const field = $('#periodCustomDays');
         const overlay = $('#periodInputOverlay');
         if (!field || !overlay) return;
-        field.value = $('#habitPeriod').value;
+        periodInputTarget = typeof target === 'string' ? target : 'habit';
+        field.value = currentPeriodOf(periodInputTarget);
         field.min = 1;
         field.max = 365;
         updatePeriodCustomResult();
@@ -1919,6 +2031,8 @@
             $('#habitNoPeriod').checked = isPeriodless(habit);
             applyNoPeriodState();
             reminderTimeCurrent = habit.reminderTime || null;
+            $('#habitActions').hidden = false;
+            $('#habitMoveToPlan').hidden = plans.length === 0;
         } else {
             userEditedName = false;
             title.textContent = 'Новая задача';
@@ -1937,6 +2051,7 @@
             $('#habitNoPeriod').checked = false;
             applyNoPeriodState();
             reminderTimeCurrent = null;
+            $('#habitActions').hidden = true;
         }
 
         updateReminderDisplay();
@@ -1967,13 +2082,15 @@
         }
 
         const row = document.createElement('div');
-        row.className = 'plan-row';
+        row.className = 'plan-strip';
+        row.style.setProperty('--c', color);
 
-        const label = document.createElement('div');
-        label.className = 'plan-label';
-        label.innerHTML = `
-            <span class="plan-name" title="${escapeHtml(item.name)}">${item.emoji} ${escapeHtml(item.name)}</span>
-            <span class="plan-dates">до ${formatShort(end)}</span>
+        const head = document.createElement('div');
+        head.className = 'plan-strip-head';
+        head.innerHTML = `
+            <span class="plan-strip-emoji${item.emoji ? '' : ' no-emoji'}">${item.emoji || ''}</span>
+            <span class="plan-strip-name" title="${escapeHtml(item.name)}">${escapeHtml(item.name)}</span>
+            <span class="plan-strip-to">до ${formatShort(end)}</span>
         `;
 
         const cells = document.createElement('div');
@@ -2018,8 +2135,17 @@
             i++;
         }
 
-        row.appendChild(label);
+        row.appendChild(head);
         row.appendChild(cells);
+
+        // лента длинная — показываем окрестности сегодняшнего дня
+        const todayIndex = diffDays(start, t);
+        if (todayIndex > 3) {
+            requestAnimationFrame(() => {
+                cells.scrollLeft = (todayIndex - 3) * 35;
+            });
+        }
+
         return row;
     }
 
@@ -2031,19 +2157,20 @@
         let hasContent = false;
 
         plans.forEach(p => {
+            if (p.items.length === 0) return;
             hasContent = true;
             const group = document.createElement('div');
-            group.className = 'plan-grid-group';
-            group.style.setProperty('--habit-color', p.color);
+            group.className = 'plan-strip-group';
+            applyCardColor(group, p.color);
 
             const head = document.createElement('div');
-            head.className = 'plan-grid-head';
+            head.className = 'plan-strip-group-head';
             const gridPct = planProgressPct(p);
             const gridPctText = gridPct === null ? '—' : `${gridPct}%`;
             head.innerHTML = `
-                <span class="plan-name">${p.emoji} ${escapeHtml(p.name)}</span>
-                <span class="habit-pct" title="Общий прогресс плана">${gridPctText}</span>
-                <span class="plan-dates">до ${formatShort(planEndDateOf(p))}</span>
+                <span class="plan-group-emoji">${p.emoji}</span>
+                <span class="name">${escapeHtml(p.name)}</span>
+                <span class="pct-badge" title="Общий прогресс плана">${gridPctText}</span>
             `;
             group.appendChild(head);
 
@@ -2064,7 +2191,7 @@
             const empty = document.createElement('div');
             empty.className = 'empty-state plan-empty';
             empty.innerHTML = `
-                <button type="button" class="empty-icon" title="Создать план" aria-label="Создать план">📅</button>
+                <button type="button" class="empty-icon" title="Создать план" aria-label="Создать план">${icon('calendar')}</button>
                 <p>Добавьте задачи с периодом или создайте план</p>
             `;
             empty.querySelector('.empty-icon').addEventListener('click', () => openPlanModal());
@@ -2174,16 +2301,6 @@
                 movePlanItem(downBtn.dataset.plan, downBtn.dataset.item, 1);
                 return;
             }
-            const removeBtn = e.target.closest('.plan-item-remove');
-            if (removeBtn) {
-                removePlanItem(removeBtn.dataset.plan, removeBtn.dataset.item);
-                return;
-            }
-            const extractBtn = e.target.closest('.plan-item-extract');
-            if (extractBtn) {
-                movePlanItemToHabit(extractBtn.dataset.plan, extractBtn.dataset.item);
-                return;
-            }
             const editItemBtn = e.target.closest('.plan-item-edit');
             if (editItemBtn) {
                 openItemModal(editItemBtn.dataset.plan, editItemBtn.dataset.item);
@@ -2199,10 +2316,41 @@
                 deletePlan(delBtn.dataset.plan);
                 return;
             }
+            // тап по строке задачи — редактирование (там же вынос и удаление)
+            const row = e.target.closest('.plan-item');
+            if (row) {
+                const check = row.querySelector('.plan-item-check');
+                if (check) openItemModal(check.dataset.plan, check.dataset.item);
+            }
+        });
+
+        // Действия в модалке задачи: перенести в план, удалить
+        $('#habitMoveToPlan').addEventListener('click', () => {
+            const id = editingId;
+            closeModal();
+            if (id) openMoveToPlanDialog(id);
+        });
+        $('#habitDelete').addEventListener('click', () => {
+            const id = editingId;
+            closeModal();
+            if (id) deleteHabit(id);
+        });
+
+        // Действия в модалке задачи плана: вынести из плана, удалить
+        $('#itemExtract').addEventListener('click', () => {
+            const planId = $('#itemPlanId').value;
+            const itemId = editingItemId;
+            closeItemModal();
+            if (planId && itemId) movePlanItemToHabit(planId, itemId);
+        });
+        $('#itemDelete').addEventListener('click', () => {
+            const planId = $('#itemPlanId').value;
+            const itemId = editingItemId;
+            closeItemModal();
+            if (planId && itemId) confirmRemovePlanItem(planId, itemId);
         });
 
         // ==== Модалка плана ====
-        $('#addPlanBtn').addEventListener('click', () => openPlanModal());
         $('#planModalClose').addEventListener('click', closePlanModal);
         $('#planModalOverlay').addEventListener('click', (e) => {
             if (e.target === e.currentTarget) closePlanModal();
@@ -2236,15 +2384,8 @@
             });
         });
 
-        $('#planPeriodDisplay').addEventListener('click', () => {
-            $('#planPeriodDaysInput').focus();
-            $('#planPeriodDaysInput').select();
-        });
-        $('#planPeriodDaysInput').addEventListener('input', () => {
-            const v = parseInt($('#planPeriodDaysInput').value, 10);
-            if (v && v >= 1 && v <= 365) setPlanPeriod(v);
-        });
-        $$('#planPeriodPresets .preset-btn').forEach(btn => {
+        $('#planPeriodDisplay').addEventListener('click', () => openPeriodInput('plan'));
+        $$('#planPeriodPresets .chip').forEach(btn => {
             btn.addEventListener('click', (e) => {
                 e.preventDefault();
                 setPlanPeriod(btn.dataset.days);
@@ -2309,16 +2450,13 @@
             if ($('#itemName').value.trim()) itemUserEditedName = true;
             $('#itemNameError').hidden = true;
         });
-        $$('#itemPeriodPresets .preset-btn').forEach(btn => {
+        $$('#itemPeriodPresets .chip').forEach(btn => {
             btn.addEventListener('click', (e) => {
                 e.preventDefault();
                 setItemPeriod(btn.dataset.days);
             });
         });
-        $('#itemPeriodDays').addEventListener('input', () => {
-            const v = parseInt($('#itemPeriodDays').value, 10);
-            if (v && v >= 1 && v <= 365) setItemPeriod(v);
-        });
+        $('#itemPeriodDisplay').addEventListener('click', () => openPeriodInput('item'));
         $('#itemForm').addEventListener('submit', (e) => {
             e.preventDefault();
             const name = $('#itemName').value.trim();
@@ -2344,15 +2482,8 @@
             if (e.target === $('#moveOverlay')) closeMoveToPlanDialog();
         });
 
-        // Клики по плашкам статистики
+        // «N всего» в блоке дня открывает историю выполнений
         $('#statTotalCard').addEventListener('click', openHistoryModal);
-        $('#statTodayCard').addEventListener('click', focusTodaySection);
-        $('#statTotalCard').addEventListener('keydown', (e) => {
-            if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); openHistoryModal(); }
-        });
-        $('#statTodayCard').addEventListener('keydown', (e) => {
-            if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); focusTodaySection(); }
-        });
 
         // Модалка истории
         $('#historyClose').addEventListener('click', closeHistoryModal);
@@ -2362,11 +2493,9 @@
 
         // Обработчики периода (логика вынесена в scope IIFE — setPeriod и т.д.)
         const periodSlider = $('#periodSlider');
-        const periodPresets = $$('#periodPresets .preset-btn');
+        const periodPresets = $$('#periodPresets .chip');
         const periodOverlay = $('#periodInputOverlay');
         const periodCustomField = $('#periodCustomDays');
-        const periodCustomResult = $('#periodCustomResult');
-        const periodCustomFieldInline = $('#periodCustomDaysInline');
 
         periodSlider.addEventListener('input', (e) => {
             setPeriod(nearestStep(e.target.value));
@@ -2379,20 +2508,15 @@
             });
         });
 
-        $('#periodDisplay').addEventListener('click', openPeriodInput);
+        $('#periodDisplay').addEventListener('click', () => openPeriodInput('habit'));
         $('#periodDisplay').addEventListener('keydown', (e) => {
             if (e.key === 'Enter' || e.key === ' ') {
                 e.preventDefault();
-                openPeriodInput();
+                openPeriodInput('habit');
             }
         });
 
         periodCustomField.addEventListener('input', updatePeriodCustomResult);
-        // Обработчик для inline поля кастомного периода (как в планах)
-        periodCustomFieldInline.addEventListener('input', () => {
-            const v = parseInt(periodCustomFieldInline.value, 10);
-            if (v && v >= 1 && v <= 365) setPeriod(v);
-        });
 
         $('#habitNoPeriod').addEventListener('change', applyNoPeriodState);
 
@@ -2472,7 +2596,7 @@
         $('#periodCustomOk').addEventListener('click', () => {
             const v = parseInt(periodCustomField.value, 10);
             if (!v || v < 1 || v > 365) return;
-            setPeriod(v);
+            applyPeriodTo(periodInputTarget, v);
             closePeriodInput();
         });
 
