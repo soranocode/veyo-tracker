@@ -179,5 +179,5 @@ $tg = $root.Replace('<meta name="viewport" content="width=device-width, initial-
 - Архитектура напоминаний: Mini App (ПРОД: veyo-tracker.pages.dev, dev: veyo-tracker-dev.pages.dev) шлёт задачи с `reminderTime` в Cloudflare Worker `veyo-reminders` (POST /api/sync → KV `VEYO_KV`, авторизация по initData) → cron раз в минуту шлёт через Telegram Bot API `sendMessage` на chat_id (webhook копит `chat:<user_id>`).
 - Локальный long polling-бот на grammY (`bot/index.js`) — LEGACY, остановлен. Бот живёт в Worker через webhook.
 - Веб-патч синхронизации (`syncRemindersToBackend()` в корневом `js/app.js`, вызывается из `save()` и `init()`) — часть эпика напоминаний; синк копий — по процедуре выше.
-- Telegram-бот `@veyo_tracker_bot`: на `/start` в личке — приветствие с кнопкой «Открыть Veyo Tracker» (ведёт на ПРОД, worker v8); на прочие сообщения молчит. Menu Button бота ведёт на мини-апп.
+- Telegram-бот `@veyo_tracker_bot`: на `/start` в личке — приветствие с кнопкой «Открыть Veyo Tracker» (ведёт на ПРОД, worker v8); на прочие сообщения молчит. Menu Button бота переключён на ПРОД (10.09).
 - Worker v8 (10.09): ручная рассылка анонсов обновлений всем, кто писал боту — `POST /admin/broadcast` `{version, notes, force?}` (заголовок `X-Admin-Secret` = WEBHOOK_SECRET); шлётся только по команде пользователя. Плюс `POST /admin/setmenubutton` (Menu Button → URL мини-аппа).

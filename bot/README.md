@@ -77,7 +77,7 @@ Mini App (telegram/, CF Pages)                Cloudflare Worker "veyo-reminders"
 
 ### 3. Telegram-бот `@veyo_tracker_bot`
 - Webhook: `https://veyo-reminders.okhotinandrei5.workers.dev/webhook` (`pending_update_count: 0`)
-- Menu Button — кнопка слева от поля ввода в личке с ботом (тип web_app). Сейчас указывает на **dev**-URL; включить ПРОД — `POST /admin/setmenubutton` (v8)
+- Menu Button — кнопка слева от поля ввода в личке с ботом (тип web_app). **Переключена на ПРОД** 10.09 (10.09: `POST /admin/setmenubutton`, Telegram → `result:true`); вернуть dev — тем же вызовом с `{"url":"https://veyo-tracker-dev.pages.dev"}`
 - Бот «только плашка»: молчит на сообщения (кроме `/start` — приветствие, v5), отвечает только действиями (кнопка)
 - Переменная окружения `MINI_APP_URL` (опционально) — URL для приветственной кнопки; сейчас не задана, код использует **ПРОД** `https://veyo-tracker.pages.dev` (v8)
 
@@ -139,7 +139,7 @@ cd telegram; wrangler pages deploy . --project-name veyo-tracker-dev --branch ma
 ✅ Деплой v8 `aca3f709`; ping через `Invoke-WebRequest` → `version:8` (web_fetch отдавал кеш — не показатель)
 ✅ Текст приветствия без «заранее»; дефолтный URL кнопки — ПРОД `https://veyo-tracker.pages.dev`
 ⬜ `/admin/broadcast` живьём не запускался (нет команды пользователя на рассылку); код проверен синтаксически
-⬜ Menu Button на ПРОД не переключён (ждёт решения пользователя)
+✅ Menu Button переключён на ПРОД (10.09): `POST /admin/setmenubutton {url:ПРОД}` → Telegram `{"ok":true,"result":true}`
 
 ## Статус теста (10.09, worker v7 — auth по initData)
 ✅ /api/state без initData → 401; с валидным initData → 200 (сгенерирован подписью BOT_TOKEN)
