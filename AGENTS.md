@@ -1,7 +1,7 @@
 # AGENTS.md — контекст проекта Task Tracker
 
 Прочитай этот файл целиком перед работой над проектом. Он содержит всё, что сделано и как устроен проект.
-Обновлено: 9 сентября 2026 г.
+Обновлено: 10 сентября 2026 г.
 
 ## Что это за проект
 
@@ -109,7 +109,7 @@ $tg = $root.Replace('<meta name="viewport" content="width=device-width, initial-
 2. Копия в android assets + telegram (см. выше, telegram/index.html — спец-сборка).
 3. Деплой Telegram — DEV: `wrangler pages deploy telegram --project-name veyo-tracker-dev --branch main` (занимает ~2 с).
 3а. Деплой Telegram — ПРОД: `wrangler pages deploy telegram --project-name veyo-tracker --branch main` (занимает ~2 с). Prod ТОЛЬКО после команды пользователя «прод/деплой прод».
-   DEV: https://veyo-tracker-dev.pages.dev/ — ПРОД: https://veyo-tracker.pages.dev/ (ещё НЕ задеплоен). Git-ветки: `dev` / `master`. Старые CF-проекты habit-tracker/habit-tracker-dev остались на месте (не удалять без спроса).
+   DEV: https://veyo-tracker-dev.pages.dev/ — ПРОД: https://veyo-tracker.pages.dev/ (задеплоен 10.09, v0.1.1). Git-ветки: `dev` / `master`. Старые CF-проекты habit-tracker/habit-tracker-dev остались на месте (не удалять без спроса).
 4. APK — ТОЛЬКО по явной просьбе пользователя: `cd android; $env:JAVA_HOME='C:\Program Files\Android\Android Studio\jbr'; .\gradlew.bat assembleRelease`, далее `Copy-Item app\build\outputs\apk\release\app-release.apk -> C:\Users\user\Downloads\VeyoTracker.apk`.
 5. Node-проверка: `node --check js\app.js`.
 
@@ -176,7 +176,8 @@ $tg = $root.Replace('<meta name="viewport" content="width=device-width, initial-
 ## Telegram-бот и напоминания (ЗОНА БОТ-АГЕНТА, с 02.09.2026)
 
 - Каталог `bot/` закреплён за бот-агентом (OpenClaw). Кодеру фронта НЕ редактировать `bot/` без команды пользователя. Подробности и статус: `bot/README.md`.
-- Архитектура напоминаний: Mini App (dev: veyo-tracker-dev.pages.dev) шлёт задачи с `reminderTime` в Cloudflare Worker `veyo-reminders` (POST /api/sync → KV `VEYO_KV`) → cron раз в минуту шлёт через Telegram Bot API `sendMessage` на chat_id (webhook копит `chat:<user_id>`).
+- Архитектура напоминаний: Mini App (ПРОД: veyo-tracker.pages.dev, dev: veyo-tracker-dev.pages.dev) шлёт задачи с `reminderTime` в Cloudflare Worker `veyo-reminders` (POST /api/sync → KV `VEYO_KV`, авторизация по initData) → cron раз в минуту шлёт через Telegram Bot API `sendMessage` на chat_id (webhook копит `chat:<user_id>`).
 - Локальный long polling-бот на grammY (`bot/index.js`) — LEGACY, остановлен. Бот живёт в Worker через webhook.
 - Веб-патч синхронизации (`syncRemindersToBackend()` в корневом `js/app.js`, вызывается из `save()` и `init()`) — часть эпика напоминаний; синк копий — по процедуре выше.
-- Telegram-бот `@veyo_tracker_bot` в режиме «только плашка»: Menu Button ведёт на мини-апп, на сообщения бот молчит.
+- Telegram-бот `@veyo_tracker_bot`: на `/start` в личке — приветствие с кнопкой «Открыть Veyo Tracker» (ведёт на ПРОД, worker v8); на прочие сообщения молчит. Menu Button бота ведёт на мини-апп.
+- Worker v8 (10.09): ручная рассылка анонсов обновлений всем, кто писал боту — `POST /admin/broadcast` `{version, notes, force?}` (заголовок `X-Admin-Secret` = WEBHOOK_SECRET); шлётся только по команде пользователя. Плюс `POST /admin/setmenubutton` (Menu Button → URL мини-аппа).
