@@ -8,9 +8,10 @@
 // v5 (2026-09-10): приветствие в чате — на /start бот шлёт текст + inline-кнопку web_app (открыть мини-апп).
 // v6 (2026-09-10): предупреждение (warn) УДАЛЕНО — одно уведомление в время задачи; крон читает chat/done
 //   только в минуту уведомления (экономия чтений KV).
+// v7 (2026-09-10): /api/sync и /api/state авторизуются по initData (user_id из тела/запроса больше не доверяем).
 // Эндпоинты:
-//   POST /api/sync    — мини-апп: { user_id, tz, tasks: [{id,name,emoji,color,reminderTime,active,doneToday}] } (leadMin игнорируется)
-//   GET  /api/state   — мини-апп: ?user_id= -> отметки «выполнено» из бота { done: { <taskId>: ["YYYY-MM-DD", ...] } }
+//   POST /api/sync    — мини-апп: { initData, tz, tasks: [{id,name,emoji,color,reminderTime,active,doneToday}] } (initData валидируется)
+//   GET  /api/state   — мини-апп: ?initData= -> отметки «выполнено» из бота { done: { <taskId>: ["YYYY-MM-DD", ...] } }
 //   GET  /api/data    — мини-апп: ?initData=<сырой tg.initData> -> { ok, updatedAt:<ms|null>, data:<строка|null> } (снимок состояния)
 //   POST /api/data    — мини-апп: { initData, updatedAt:<ms>, data:"<json строкой>" } — last-write-wins (updatedAt > snap.updatedAt)
 //   POST /webhook     — Telegram updates: сообщения (копируем chat_id; на /start — приветствие)
@@ -22,8 +23,6 @@
 //   done:<tg_user_id>:<date>:<taskId> -> '1' (выполнено из бота; TTL 7 дней — /api/state отдаёт эти дни)
 //   sent:<tg_user_id>:<date>:<taskId>:due -> '1' (защита от дублей; TTL 2 дня)
 //   snap:<tg_user_id>                 -> { updatedAt:<ms>, data:"<полный JSON состояния приложения строкой>" } (зеркало для синка; без TTL)
-// TODO (безопасность, обратная совместимость): /api/sync и /api/state пока принимают user_id без проверки —
-//   добавить валидацию initData по аналогии с /api/data, когда мини-апп начнёт слать initData (v9+).
 
 const CORS = {
   'Access-Control-Allow-Origin': '*',
@@ -183,8 +182,9 @@ async function sendWelcome(env, chatId) {
 async function handleSync(request, env) {
   try {
     const body = await request.json();
-    const userId = body && body.user_id;
-    if (!userId) return json({ ok: false, error: 'missing user_id' }, 400);
+    const auth = await validateInitData((body && body.initData) || '', env.BOT_TOKEN);
+    if (!auth) return json({ ok: false, error: 'unauthorized' }, 401);
+    const userId = auth.userId;
 
     const syncDate = dateInTz((typeof body.tz === 'string' && body.tz) || 'UTC');
     const tasks = Array.isArray(body.tasks) ? body.tasks.map((t) => ({
@@ -218,8 +218,9 @@ async function handleSync(request, env) {
 // tasks[].doneToday = есть отметка бота на сегодня — это читает мини-апп при мерже.
 async function handleState(request, env, url) {
   try {
-    const userId = url.searchParams.get('user_id');
-    if (!userId) return json({ ok: false, error: 'missing user_id' }, 400);
+    const auth = await validateInitData(url.searchParams.get('initData') || '', env.BOT_TOKEN);
+    if (!auth) return json({ ok: false, error: 'unauthorized' }, 401);
+    const userId = auth.userId;
 
     const done = {};
     let cursor;
@@ -592,7 +593,7 @@ export default {
       return json({ ok: tgResp.ok, telegram: tgText.slice(0, 600) });
     }
     if (url.pathname === '/') {
-      return json({ ok: true, service: 'veyo-reminders', version: 6 });
+      return json({ ok: true, service: 'veyo-reminders', version: 7 });
     }
     return json({ ok: false, error: 'not found' }, 404);
   },

@@ -2,7 +2,7 @@
 
 > **ТЕРРИТОРИЯ БОТ-АГЕНТА (OpenClaw).** Этот каталог закреплён за бот-агентом — другие агенты (в т.ч. кодер фронта) НЕ редактируют `bot/` без явной команды пользователя. Веб-файлы (корень репо, `telegram/`, `android/`) — территория кодера; правки UI синхронизируются по процедуре из корневого `AGENTS.md`.
 
-Статус: **работает (v6)**. Обновлено: 10.09.2026 ~11:55 (GMT+4). Деплои 10.09: worker **v6** `06448e25` (warn удалён + крон читает chat/done только в минуту уведомления), worker v5 `eb5c1dad` (приветствие на /start); 09.09 worker v4 `1812dc4d` (фиксы аудита P1-P3), worker v3 `d488c742` (/api/data).
+Статус: **работает (v7)**. Обновлено: 10.09.2026 ~12:25 (GMT+4). Деплои 10.09: worker **v7** `f4390395` (auth /api/sync + /api/state по initData), worker v6 `06448e25` (warn удалён + крон читает chat/done только в минуту уведомления), worker v5 `eb5c1dad` (приветствие на /start); фронт Pages dev v12 `42c9bff2` (initData в sync/state, leadMin убран из UI).
 
 ---
 
@@ -31,11 +31,11 @@
 Mini App (telegram/, CF Pages)                Cloudflare Worker "veyo-reminders"          Telegram
 ┌────────────────────────────┐  POST /api/sync ┌────────────────────────────────────┐ sendMessage ┌─────────┐
 │ save() → syncReminders…() │ ───────────────▶ │ fetch:                             │ ──────────▶ │@veyo_…  │
-│ init → cloudBoot + fetch… │  {user_id,tz,    │  /api/sync  → KV user:<id>         │  editMessage└─────────┘
+│ init → cloudBoot + fetch… │  {initData,tz,   │  /api/sync  → KV user:<id>         │  editMessage└─────────┘
 └────────────────────────────┘      tasks}     │  /api/state → отметки done (7 дн) │
                                                │  /api/data  → KV snap:<id> (v3)    │
                                                │  /webhook   → chat:<id>; /start    │
-                                               │  /          → ping {version:6}     │
+                                               │  /          → ping {version:7}     │
                                                │  cron * * * * *:                   │
                                                │   due = reminderTime (кнопка)      │
                                                └────────────────────────────────────┘
@@ -50,12 +50,12 @@ Mini App (telegram/, CF Pages)                Cloudflare Worker "veyo-reminders"
 Эндпоинты:
 | Путь | Назначение |
 |---|---|
-| `POST /api/sync` | Mini App: `{user_id, tz, tasks:[{id,name,emoji,color,reminderTime,active,doneToday}]}` (лишний `leadMin` игнорируется, v6) → `user:<id>` = `{tz, tasks:[…+doneDate], updatedAt}`. В KV сохраняются только задачи с `reminderTime`. `doneDate` = дата снимка в tz — вчерашний `doneToday` не блокирует сегодняшнее напоминание. |
-| `GET /api/state?user_id=` | `{ok, done:{<taskId>:[даты]}, tasks:[{id, doneToday}]}` — done-отметки бота за 7 дней. Форму `tasks[].doneToday` читает мини-апп (мерж). |
+| `POST /api/sync` | Mini App: `{initData, tz, tasks:[{id,name,emoji,color,reminderTime,active,doneToday}]}` (v7: user_id берётся ИЗ initData; лишний `leadMin` игнорируется) → `user:<id>` = `{tz, tasks:[…+doneDate], updatedAt}`. В KV сохраняются только задачи с `reminderTime`. `doneDate` = дата снимка в tz — вчерашний `doneToday` не блокирует сегодняшнее напоминание. |
+| `GET /api/state?initData=` | (v7: `initData` вместо `user_id`) `{ok, done:{<taskId>:[даты]}, tasks:[{id, doneToday}]}` — done-отметки бота за 7 дней. Форму `tasks[].doneToday` читает мини-апп (мерж). |
 | `POST /webhook` | **ТОЛЬКО от Telegram (v4, P3)**: заголовок `X-Telegram-Bot-Api-Secret-Token` = секрет `WEBHOOK_SECRET` (иначе 401). message → `chat:<from.id>` = chat_id (на `/start` в личке — приветствие с кнопкой, v5); `callback_query` data=`done:<YYYY-MM-DD>:<taskId>` → отметка done только за сегодня + editMessageText. |
 | `GET /api/data?initData=` | (v3, серверная синхронизация) `{ok, updatedAt:<ms|null>, data:<строка|null>}` — снимок состояния мини-аппа из `snap:<user_id>`. Валидация initData: без подписи/с битой подписью/старше 48ч → 401. |
 | `POST /api/data` | body `{initData, updatedAt:<ms>, data:"<json строкой>"}` — «тупое зеркало», last-write-wins: принимается только при `updatedAt > snap.updatedAt`; иначе `{saved:false, serverUpdatedAt}` (клиент пересинхронизируется). Лимит data: 2М символов. user_id берётся ИЗ initData, не из тела. |
-| `GET /` | ping `{ok, service, version:6}` |
+| `GET /` | ping `{ok, service, version:7}` |
 | `POST /admin/setwebhook` | служебный (P3): переустановить webhook с `secret_token`. Доступ: заголовок `X-Admin-Secret` = WEBHOOK_SECRET. Нужен, т.к. с ПК пользователя api.telegram.org недоступен (сеть), worker до Telegram ходит: `curl -X POST -H "X-Admin-Secret: <секрет>" https://veyo-reminders.okhotinandrei5.workers.dev/admin/setwebhook` |
 | cron `* * * * *` | одно уведомление в время задачи (`due`), v6. Крон на юзера: 1 чтение `user:<id>`; `chat:<id>`/`done:*` — только в минуту уведомления. Защита от дублей: `sent:<user>:<дата>:<taskId>:due` TTL 2д. Пагинация по cursor (страницы по 1000). |
 
@@ -82,9 +82,9 @@ Mini App (telegram/, CF Pages)                Cloudflare Worker "veyo-reminders"
 - **Кросс-девайс синк (v9+/v10)**: CloudStorage-слой (v1.*) УДАЛЁН и заменён на зеркало в worker: при старте init() рендерит UI сразу из localStorage (кеш), затем cloudBoot() тянет `GET /api/data` и применяет, если сервер новее; после save/saveStats/saveSettings/saveHistory/savePlans/toggleTheme — cloudQueue() → `POST /api/data` (debounce 1.5с). Конфликт: last-write-wins по `updatedAt` (localStorage `habit-tracker-sync`). Вне TG — чисто локально.
 - 09.09: фича «Цель (goal)» удалена (бинарное выполнение 0→1→0), кнопка «Выполнено» в боте — всегда. telegram/index.html пересобирался из корневого → версия поднята до `?v=10` (регенерация сбрасывает — см. AGENTS.md ⚠️).
 - ⚠️ КОДЕР (opencode): слой синка — зона бот-агента, CloudStorage НЕ возвращать; пометки в шапке секции app.js, AGENTS.md, index.html.
-- sync шлёт `color`, `doneToday` (v6: `leadMin` больше не нужен — предупреждение удалено; если фронт шлёт — игнорируется); задачи без эмодзи — `emoji: ''` (фолбэк «🔔» был багом кодера, исправлен; НЕ возвращать).
+- sync шлёт `initData`, `tz`, `color`, `doneToday`; `leadMin` больше не шлётся (предупреждение удалено); задачи без эмодзи — `emoji: ''` (фолбэк «🔔» был багом кодера, исправлен; НЕ возвращать).
 - fetchState() вызывается в init (кнопка «Выполнено» → мерж в приложение).
-- Настройка «предупреждать за N мин» в приложении — **больше не нужна** (v6, warn удалён). Убрать из UI при следующей правке фронта (зона кодера).
+- Настройка «предупреждать за N мин» **убрана из UI** (10.09, вместе с warn); `leadMin` в localStorage остаётся пустым объектом (для совместимости).
 - ⚠️ Кодер работает со СТАРОЙ копией и своими коммитами откатывал правки бот-агента в `telegram/` (3 раза 03.09). Координация: перед коммитами кодера он должен синхронизироваться с HEAD репозитория.
 
 ## Команды
@@ -130,10 +130,18 @@ cd telegram; wrangler pages deploy . --project-name veyo-tracker-dev --branch ma
 ✅ (историч.) warn→due→delete warn — предупреждение удалено в v6
 ⬜ E2E по шагам: задача на +2 мин → уведомление с кнопкой → кнопка → проверка в приложении → синк на втором устройстве
 
+## Статус теста (10.09, worker v7 — auth по initData)
+✅ /api/state без initData → 401; с валидным initData → 200 (сгенерирован подписью BOT_TOKEN)
+✅ /api/sync с битым initData → 401; с валидным → 200 (запись в KV user:<id>)
+✅ /api/data без initData → 401; с валидным → 200 (не сломано)
+✅ ping `version:7`; /webhook без секрета → 401
+✅ Фронт v12 задеплоен (Pages dev `42c9bff2`): sync/state шлют initData, leadMin из UI убран
+⬜ Живой E2E с телефона: открыть мини-апп → sync/state с initData работают; напоминание приходит; кнопка работает
+
 ## TODO / открытые вопросы
 - фича «Цель (раз в день)» удалена 09.09 → кнопка «Выполнено» теперь всегда
 - предупреждение (warn) удалено 10.09 (v6) — одно уведомление в время задачи; настройка `leadMin` не используется
 - Масштаб/лимиты KV (free: 100k чтений, 1k записей/сутки): после v6 для ~30 чел. влезаем (чтения ~45k/сутки); узкое место — записи, если фронт пишет снапшот на каждое сохранение → тогда писать снапшот только на входе/выходе. Свыше ~100 — планирование к точным минутам вместо сканирования
 - PROD-мини-апп не задеплоен; при появлении — решить разделение KV между DEV/PROD
 - VK-версия: CloudStorage работает только в Telegram → для VK нужен бэкенд-синк (вариант B) — worker-часть (v3) готова, при старте VK переиспользовать /api/data
-- /api/sync и /api/state принимают user_id без проверки (TODO в коде): добавить валидацию initData, когда мини-апп начнёт слать initData (v9+)
+- /api/sync и /api/state авторизуются по initData (v7) — дыра с произвольным user_id закрыта

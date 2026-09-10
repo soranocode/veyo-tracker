@@ -209,7 +209,6 @@
     let toastTimer = null;
     let confirmResolver = null;
     let userEditedName = false;
-    let leadMin = 0;
 
     const $ = (sel) => document.querySelector(sel);
     const $$ = (sel) => document.querySelectorAll(sel);
@@ -314,14 +313,13 @@
 
     // ---- Синхронизация напоминаний с бэкендом (Cloudflare Worker veyo-reminders) ----
     // Шлёт снапшот задач с напоминаниями, чтобы Worker-бот мог доставлять push.
-    // Только из Telegram Mini App (нужен user_id), fire-and-forget, дебаунс 10 с.
+    // Только из Telegram Mini App (нужен initData), fire-and-forget, дебаунс 10 с.
     const SYNC_ENDPOINT = 'https://veyo-reminders.okhotinandrei5.workers.dev/api/sync';
     const STATE_ENDPOINT = 'https://veyo-reminders.okhotinandrei5.workers.dev/api/state';
     let lastReminderSyncAt = 0;
 
     function syncRemindersToBackend() {
-        const u = tg && tg.initDataUnsafe && tg.initDataUnsafe.user;
-        if (!u || !u.id) return;
+        if (!tg || !tg.initData) return; // вне Telegram — синк не нужен
 
         const t = today();
         let tz = 'UTC';
@@ -348,9 +346,8 @@
         lastReminderSyncAt = nowMs;
 
         const payload = {
-            user_id: String(u.id),
+            initData: tg.initData,
             tz,
-            leadMin,
             tasks
         };
 
@@ -362,10 +359,9 @@
     }
 
     function fetchState() {
-        const u = tg && tg.initDataUnsafe && tg.initDataUnsafe.user;
-        if (!u || !u.id) return;
+        if (!tg || !tg.initData) return; // вне Telegram — нечего мержить
 
-        fetch(`${STATE_ENDPOINT}?user_id=${encodeURIComponent(u.id)}`)
+        fetch(`${STATE_ENDPOINT}?initData=${encodeURIComponent(tg.initData)}`)
             .then(r => r.ok ? r.json() : null)
             .then(data => {
                 if (!data || !data.tasks) return;
@@ -571,20 +567,11 @@
         localStorage.setItem(STATS_KEY, JSON.stringify(stats));
     }
 
-    function loadSettings() {
-        try {
-            const raw = localStorage.getItem(SETTINGS_KEY);
-            if (raw) {
-                const s = JSON.parse(raw);
-                leadMin = typeof s.leadMin === 'number' ? s.leadMin : 0;
-            }
-        } catch {
-            leadMin = 0;
-        }
-    }
+    // (v6) настройка «за сколько минут напоминать» удалена вместе с предупреждением (warn).
+    function loadSettings() { /* больше нечего загружать */ }
 
     function saveSettings() {
-        localStorage.setItem(SETTINGS_KEY, JSON.stringify({ leadMin }));
+        localStorage.setItem(SETTINGS_KEY, JSON.stringify({}));
     }
 
     // ===================== История выполнений =====================
@@ -2131,9 +2118,6 @@
 
         function openSettingsModal() {
             const overlay = $('#settingsOverlay');
-            $$('#leadMinOptions .setting-opt').forEach(btn => {
-                btn.classList.toggle('selected', parseInt(btn.dataset.value, 10) === leadMin);
-            });
             overlay.classList.add('active');
             document.body.classList.add('modal-open');
             updateBackButton();
@@ -2149,16 +2133,6 @@
         $('#settingsClose').addEventListener('click', closeSettingsModal);
         $('#settingsOverlay').addEventListener('click', (e) => {
             if (e.target === e.currentTarget) closeSettingsModal();
-        });
-
-        $$('#leadMinOptions .setting-opt').forEach(btn => {
-            btn.addEventListener('click', () => {
-                $$('#leadMinOptions .setting-opt').forEach(b => b.classList.remove('selected'));
-                btn.classList.add('selected');
-                leadMin = parseInt(btn.dataset.value, 10) || 0;
-                saveSettings();
-                syncRemindersToBackend();
-            });
         });
 
         $$('.emoji-btn').forEach(btn => {
