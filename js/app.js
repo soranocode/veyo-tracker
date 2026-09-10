@@ -985,7 +985,6 @@
             $('#planModalOverlay').classList.contains('active') ||
             $('#itemModalOverlay').classList.contains('active') ||
             $('#historyOverlay').classList.contains('active') ||
-            $('#settingsOverlay').classList.contains('active') ||
             (!$('#moveOverlay').hidden && $('#moveOverlay').classList.contains('active'));
     }
     function updateBackButton() {
@@ -2116,25 +2115,6 @@
 
         $('#themeToggle').addEventListener('click', toggleTheme);
 
-        function openSettingsModal() {
-            const overlay = $('#settingsOverlay');
-            overlay.classList.add('active');
-            document.body.classList.add('modal-open');
-            updateBackButton();
-        }
-
-        function closeSettingsModal() {
-            $('#settingsOverlay').classList.remove('active');
-            document.body.classList.remove('modal-open');
-            updateBackButton();
-        }
-
-        $('#settingsBtn').addEventListener('click', openSettingsModal);
-        $('#settingsClose').addEventListener('click', closeSettingsModal);
-        $('#settingsOverlay').addEventListener('click', (e) => {
-            if (e.target === e.currentTarget) closeSettingsModal();
-        });
-
         $$('.emoji-btn').forEach(btn => {
             btn.addEventListener('click', () => {
                 if (btn.classList.contains('selected')) {
@@ -2583,10 +2563,6 @@
         }
         if ($('#historyOverlay').classList.contains('active')) {
             closeHistoryModal();
-            return;
-        }
-        if ($('#settingsOverlay').classList.contains('active')) {
-            closeSettingsModal();
             return;
         }
         if ($('#modalOverlay').classList.contains('active')) {

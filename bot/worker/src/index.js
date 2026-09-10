@@ -9,6 +9,8 @@
 // v6 (2026-09-10): предупреждение (warn) УДАЛЕНО — одно уведомление в время задачи; крон читает chat/done
 //   только в минуту уведомления (экономия чтений KV).
 // v7 (2026-09-10): /api/sync и /api/state авторизуются по initData (user_id из тела/запроса больше не доверяем).
+// v8 (2026-09-10): приветственная кнопка ведёт на ПРОД (https://veyo-tracker.pages.dev); убран текст «напомнит заранее»
+//   (warn удалён в v6); добавлена рассылка обновлений всем пользователям и установка Menu Button.
 // Эндпоинты:
 //   POST /api/sync    — мини-апп: { initData, tz, tasks: [{id,name,emoji,color,reminderTime,active,doneToday}] } (initData валидируется)
 //   GET  /api/state   — мини-апп: ?initData= -> отметки «выполнено» из бота { done: { <taskId>: ["YYYY-MM-DD", ...] } }
@@ -16,6 +18,10 @@
 //   POST /api/data    — мини-апп: { initData, updatedAt:<ms>, data:"<json строкой>" } — last-write-wins (updatedAt > snap.updatedAt)
 //   POST /webhook     — Telegram updates: сообщения (копируем chat_id; на /start — приветствие)
 //                       + callback_query (кнопка «Выполнено»)
+//   POST /admin/broadcast     — рассылка уведомления об обновлении всем пользователям
+//                               { version:"X.Y.Z", notes:"что нового", force?:bool } (X-Admin-Secret)
+//   POST /admin/setmenubutton — установить Menu Button бота на URL мини-аппа { url? } (X-Admin-Secret)
+//   POST /admin/setwebhook    — переустановить webhook (X-Admin-Secret)
 //   cron (каждую минуту) — доставка
 // KV:
 //   user:<tg_user_id>                 -> { tz, tasks:[...], updatedAt }
@@ -30,18 +36,19 @@ const CORS = {
   'Access-Control-Allow-Headers': 'Content-Type',
 };
 
-// v5: URL мини-аппа для приветственной кнопки (env.MINI_APP_URL переопределяет; PROD подставит свой)
-const MINI_APP_URL = 'https://veyo-tracker-dev.pages.dev';
+// v8: URL мини-аппа — ПРОД (env.MINI_APP_URL переопределяет, напр. на dev при тестировании)
+const MINI_APP_URL = 'https://veyo-tracker.pages.dev';
 const WELCOME_TEXT = [
   '👋 Привет! Это Veyo Tracker — трекер планирования задач.',
   '',
   '• Планируй день: составляй план и добавляй задачи',
-  '• Ставь время — бот напомнит заранее и в срок',
+  '• Ставь время — бот напомнит в срок',
   '• Отмечай «✅ Выполнено» прямо в напоминании',
 ].join('\n');
 
 const DONE_TTL_SEC = 7 * 86400;   // окно, которое отдаёт /api/state
 const SENT_TTL_SEC = 2 * 86400;
+const BROADCAST_LAST_KEY = 'broadcast:last'; // версия последней разосланной анонс-рассылки
 
 // ---- цвет задачи -> кружок-эмодзи (в Telegram текст не покрасить) ----
 const CIRCLE_BY_HEX = {
@@ -176,6 +183,86 @@ async function sendWelcome(env, chatId) {
   await sendTelegram(env, chatId, WELCOME_TEXT, {
     reply_markup: { inline_keyboard: [[{ text: '🚀 Открыть Veyo Tracker', web_app: { url } }]] },
   });
+}
+
+// v8: текст анонса обновления — «вышло обновление X.Y.Z» + краткое ревью изменений + ссылка
+function buildUpdateText(version, notes, url) {
+  const lines = [`🚀 Вышло обновление Veyo Tracker ${version}`, ''];
+  const body = String(notes || '').trim();
+  if (body) lines.push(body, '');
+  lines.push('Открыть: ' + url);
+  return lines.join('\n');
+}
+
+// v8: POST /admin/broadcast { version, notes, force? } — рассылка всем пользователям бота (у кого есть chat:<id>)
+async function handleBroadcast(request, env) {
+  try {
+    const body = await request.json().catch(() => ({}));
+    const version = String((body && body.version) || '').trim();
+    if (!version) return json({ ok: false, error: 'version required' }, 400);
+    const force = body && body.force === true;
+
+    // защита от случайной повторной рассылки той же версии
+    const last = await env.VEYO_KV.get(BROADCAST_LAST_KEY);
+    if (!force && last === version) {
+      return json({ ok: true, skipped: true, reason: 'already sent', version });
+    }
+
+    const url = env.MINI_APP_URL || MINI_APP_URL;
+    const text = buildUpdateText(version, body && body.notes, url);
+    const extra = {
+      disable_web_page_preview: true,
+      reply_markup: { inline_keyboard: [[{ text: '🚀 Открыть Veyo Tracker', web_app: { url } }]] },
+    };
+
+    // получатели: все, кто хоть раз писал боту (chat:<tg_user_id>)
+    const chats = [];
+    let cursor;
+    do {
+      const page = await env.VEYO_KV.list({ prefix: 'chat:', cursor });
+      for (const key of page.keys) chats.push(key.name.slice('chat:'.length));
+      cursor = page.cursor;
+    } while (cursor);
+
+    let sent = 0;
+    let failed = 0;
+    // пачки по 10, чтобы не упереться в лимит Telegram (~30 сообщений/сек)
+    for (let i = 0; i < chats.length; i += 10) {
+      const chunk = chats.slice(i, i + 10);
+      const results = await Promise.allSettled(
+        chunk.map((chatId) => sendTelegram(env, chatId, text, extra))
+      );
+      for (const r of results) {
+        if (r.status === 'fulfilled') sent++;
+        else {
+          failed++;
+          console.error('broadcast fail:', String(r.reason));
+        }
+      }
+    }
+
+    await env.VEYO_KV.put(BROADCAST_LAST_KEY, version);
+    return json({ ok: true, version, total: chats.length, sent, failed });
+  } catch (err) {
+    return json({ ok: false, error: String((err && err.message) || err) }, 500);
+  }
+}
+
+// v8: POST /admin/setmenubutton { url? } — кнопка меню бота ведёт на мини-апп (по умолчанию ПРОД)
+async function handleSetMenuButton(request, env) {
+  try {
+    const body = await request.json().catch(() => ({}));
+    const url = (body && body.url) || env.MINI_APP_URL || MINI_APP_URL;
+    const resp = await fetch(`https://api.telegram.org/bot${env.BOT_TOKEN}/setChatMenuButton`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ menu_button: { type: 'web_app', text: 'Veyo Tracker', web_app: { url } } }),
+    });
+    const tgText = await resp.text();
+    return json({ ok: resp.ok, url, telegram: tgText.slice(0, 400) });
+  } catch (err) {
+    return json({ ok: false, error: String((err && err.message) || err) }, 500);
+  }
 }
 
 // ---- POST /api/sync ----
@@ -569,6 +656,21 @@ export default {
     if (url.pathname === '/api/data' && request.method === 'POST') {
       return handleDataPost(request, env);
     }
+    // админ-ручки (v8): заголовок X-Admin-Secret = WEBHOOK_SECRET
+    if (url.pathname === '/admin/broadcast' && request.method === 'POST') {
+      const adminSecret = request.headers.get('X-Admin-Secret') || '';
+      if (!env.WEBHOOK_SECRET || !safeEqual(adminSecret, env.WEBHOOK_SECRET)) {
+        return json({ ok: false, error: 'unauthorized' }, 401);
+      }
+      return handleBroadcast(request, env);
+    }
+    if (url.pathname === '/admin/setmenubutton' && request.method === 'POST') {
+      const adminSecret = request.headers.get('X-Admin-Secret') || '';
+      if (!env.WEBHOOK_SECRET || !safeEqual(adminSecret, env.WEBHOOK_SECRET)) {
+        return json({ ok: false, error: 'unauthorized' }, 401);
+      }
+      return handleSetMenuButton(request, env);
+    }
     if (url.pathname === '/webhook' && request.method === 'POST') {
       return handleWebhook(request, env);
     }
@@ -593,7 +695,7 @@ export default {
       return json({ ok: tgResp.ok, telegram: tgText.slice(0, 600) });
     }
     if (url.pathname === '/') {
-      return json({ ok: true, service: 'veyo-reminders', version: 7 });
+      return json({ ok: true, service: 'veyo-reminders', version: 8 });
     }
     return json({ ok: false, error: 'not found' }, 404);
   },

@@ -2053,16 +2053,13 @@ body.move-mode .habit-card.leaving {
     padding: 4px 0;
 }
 
-.app-version-corner {
-    position: fixed;
-    right: calc(12px + env(safe-area-inset-right));
-    bottom: calc(8px + env(safe-area-inset-bottom));
+.app-version {
+    text-align: right;
+    padding: 14px 16px calc(10px + env(safe-area-inset-bottom));
     font-size: 0.68rem;
     letter-spacing: 0.02em;
     color: var(--text-secondary);
-    opacity: 0.4;
-    pointer-events: none;
-    z-index: 1;
+    opacity: 0.45;
     user-select: none;
 }
 

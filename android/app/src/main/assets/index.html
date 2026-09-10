@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
     <title>Veyo Tracker — Трекер задач</title>
-    <link rel="stylesheet" href="css/style.css?v=7">
+    <link rel="stylesheet" href="css/style.css?v=8">
 </head>
 <body>
     <div class="app">
@@ -14,7 +14,6 @@
                 <span class="date-display" id="currentDate"></span>
             </div>
             <div class="header-right">
-                <button class="btn-icon" id="settingsBtn" title="Настройки">⚙️</button>
                 <button class="btn-icon" id="themeToggle" title="Переключить тему">🌙</button>
                 <button class="btn-primary" id="addHabitBtn">+ Задача</button>
             </div>
@@ -75,6 +74,8 @@
                 </div>
             </div>
         </main>
+
+        <div class="app-version">Veyo Tracker v0.1.1</div>
 
         <div class="modal-overlay" id="modalOverlay">
             <div class="modal">
@@ -355,19 +356,6 @@
         </div>
         </div>
 
-        <div class="modal-overlay" id="settingsOverlay">
-            <div class="modal">
-                <div class="modal-header">
-                    <h3>Настройки</h3>
-                    <button class="btn-close" id="settingsClose" type="button">&times;</button>
-                </div>
-                <div class="settings-body">
-                    <!-- (v6) секция «Напоминания» / выбор leadMin удалена вместе с предупреждением (warn) -->
-                </div>
-            </div>
-        </div>
-
-        <div class="app-version-corner">Veyo Tracker v0.1.1</div>
     </div>
 
     <div class="modal-overlay" id="welcomeOverlay">
@@ -385,6 +373,6 @@
         </div>
     </div>
 
-    <script src="js/app.js?v=8"></script>
+    <script src="js/app.js?v=9"></script>
 </body>
 </html>
