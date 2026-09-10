@@ -2053,6 +2053,15 @@ body.move-mode .habit-card.leaving {
     padding: 4px 0;
 }
 
+.app-version {
+    margin-top: 16px;
+    text-align: center;
+    font-size: 0.72rem;
+    letter-spacing: 0.02em;
+    color: var(--text-secondary);
+    opacity: 0.5;
+}
+
 .settings-section-title {
     font-size: 0.8rem;
     text-transform: uppercase;
