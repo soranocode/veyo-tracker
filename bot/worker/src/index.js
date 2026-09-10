@@ -1,24 +1,26 @@
 // veyo-reminders — доставка напоминаний Veyo Tracker (Cloudflare Worker)
-// v2 (2026-09-03): два события на задачу:
-//   1) Предупреждение за leadMin минут до времени задачи (текст, без кнопок)
-//   2) Уведомление ровно в время задачи (текст + кнопка «Выполнено»)
+// Текущее поведение (v6): одно событие — уведомление ровно в время задачи (текст + кнопка «Выполнено»).
 // Формат сообщения: {эмодзи|цветной кружок} {название} — {время задачи}
+// v2 (2026-09-03): было два события (предупреждение за leadMin мин + уведомление); warn удалён в v6.
 // v3 (2026-09-09): серверная синхронизация данных мини-аппа (вариант B) — /api/data + валидация initData.
 // v4 (2026-09-09): фиксы логики сообщений (аудит): P1 кнопка несёт дату (done:<YYYY-MM-DD>:<taskId>),
 //   P2 чистка warn-сообщения при выполнении/удалении задачи, P3 вебхук по secret_token.
+// v5 (2026-09-10): приветствие в чате — на /start бот шлёт текст + inline-кнопку web_app (открыть мини-апп).
+// v6 (2026-09-10): предупреждение (warn) УДАЛЕНО — одно уведомление в время задачи; крон читает chat/done
+//   только в минуту уведомления (экономия чтений KV).
 // Эндпоинты:
-//   POST /api/sync    — мини-апп: { user_id, tz, leadMin, tasks: [{id,name,emoji,color,reminderTime,active,doneToday}] }
+//   POST /api/sync    — мини-апп: { user_id, tz, tasks: [{id,name,emoji,color,reminderTime,active,doneToday}] } (leadMin игнорируется)
 //   GET  /api/state   — мини-апп: ?user_id= -> отметки «выполнено» из бота { done: { <taskId>: ["YYYY-MM-DD", ...] } }
 //   GET  /api/data    — мини-апп: ?initData=<сырой tg.initData> -> { ok, updatedAt:<ms|null>, data:<строка|null> } (снимок состояния)
 //   POST /api/data    — мини-апп: { initData, updatedAt:<ms>, data:"<json строкой>" } — last-write-wins (updatedAt > snap.updatedAt)
-//   POST /webhook     — Telegram updates: сообщения (копируем chat_id) + callback_query (кнопка «Выполнено»)
+//   POST /webhook     — Telegram updates: сообщения (копируем chat_id; на /start — приветствие)
+//                       + callback_query (кнопка «Выполнено»)
 //   cron (каждую минуту) — доставка
 // KV:
-//   user:<tg_user_id>                 -> { tz, leadMin, tasks:[...], updatedAt }
+//   user:<tg_user_id>                 -> { tz, tasks:[...], updatedAt }
 //   chat:<tg_user_id>                 -> chat_id
 //   done:<tg_user_id>:<date>:<taskId> -> '1' (выполнено из бота; TTL 7 дней — /api/state отдаёт эти дни)
-//   sent:<tg_user_id>:<date>:<taskId>:<warn|due> -> '1' (защита от дублей; TTL 2 дня)
-//   warnmsg:<tg_user_id>:<taskId> -> message_id предупреждения (удаляем при уведомлении; TTL 3 дня)
+//   sent:<tg_user_id>:<date>:<taskId>:due -> '1' (защита от дублей; TTL 2 дня)
 //   snap:<tg_user_id>                 -> { updatedAt:<ms>, data:"<полный JSON состояния приложения строкой>" } (зеркало для синка; без TTL)
 // TODO (безопасность, обратная совместимость): /api/sync и /api/state пока принимают user_id без проверки —
 //   добавить валидацию initData по аналогии с /api/data, когда мини-апп начнёт слать initData (v9+).
@@ -29,11 +31,18 @@ const CORS = {
   'Access-Control-Allow-Headers': 'Content-Type',
 };
 
-const LEAD_OPTIONS = [0, 15, 30, 60];
-const DEFAULT_LEAD_MIN = 30;
+// v5: URL мини-аппа для приветственной кнопки (env.MINI_APP_URL переопределяет; PROD подставит свой)
+const MINI_APP_URL = 'https://veyo-tracker-dev.pages.dev';
+const WELCOME_TEXT = [
+  '👋 Привет! Это Veyo Tracker — трекер планирования задач.',
+  '',
+  '• Планируй день: составляй план и добавляй задачи',
+  '• Ставь время — бот напомнит заранее и в срок',
+  '• Отмечай «✅ Выполнено» прямо в напоминании',
+].join('\n');
+
 const DONE_TTL_SEC = 7 * 86400;   // окно, которое отдаёт /api/state
 const SENT_TTL_SEC = 2 * 86400;
-const WARNMSG_TTL_SEC = 3 * 86400; // message_id предупреждения, чтобы удалить его при уведомлении
 
 // ---- цвет задачи -> кружок-эмодзи (в Telegram текст не покрасить) ----
 const CIRCLE_BY_HEX = {
@@ -162,18 +171,12 @@ async function sendTelegram(env, chatId, text, extra = {}) {
   }
 }
 
-// P2: удалить из чата ранее отправленное предупреждение (если есть) и забыть про него
-async function deleteWarnIfAny(env, userId, chatId, taskId) {
-  const warnMsgId = await env.VEYO_KV.get(`warnmsg:${userId}:${taskId}`);
-  if (!warnMsgId) return;
-  if (chatId) {
-    try {
-      await tgApi(env, 'deleteMessage', { chat_id: chatId, message_id: Number(warnMsgId) });
-    } catch (err) {
-      console.error(`delete warn msg fail user=${userId} task=${taskId}:`, String(err));
-    }
-  }
-  await env.VEYO_KV.delete(`warnmsg:${userId}:${taskId}`).catch(() => {});
+// v5: приветствие в чате на /start — текст + inline-кнопка web_app (открывает мини-апп)
+async function sendWelcome(env, chatId) {
+  const url = env.MINI_APP_URL || MINI_APP_URL;
+  await sendTelegram(env, chatId, WELCOME_TEXT, {
+    reply_markup: { inline_keyboard: [[{ text: '🚀 Открыть Veyo Tracker', web_app: { url } }]] },
+  });
 }
 
 // ---- POST /api/sync ----
@@ -182,9 +185,6 @@ async function handleSync(request, env) {
     const body = await request.json();
     const userId = body && body.user_id;
     if (!userId) return json({ ok: false, error: 'missing user_id' }, 400);
-
-    let leadMin = parseInt(body.leadMin, 10);
-    if (!LEAD_OPTIONS.includes(leadMin)) leadMin = DEFAULT_LEAD_MIN;
 
     const syncDate = dateInTz((typeof body.tz === 'string' && body.tz) || 'UTC');
     const tasks = Array.isArray(body.tasks) ? body.tasks.map((t) => ({
@@ -199,26 +199,10 @@ async function handleSync(request, env) {
       doneDate: syncDate,
     })).filter((t) => t.id && t.reminderTime) : [];
 
-    // P2: задача удалена в приложении или потеряла время -> чистим её предупреждение из чата
-    const prevRaw = await env.VEYO_KV.get(`user:${userId}`);
-    if (prevRaw) {
-      try {
-        const prevTasks = JSON.parse(prevRaw).tasks || [];
-        if (Array.isArray(prevTasks) && prevTasks.length) {
-          const newIds = new Set(tasks.map((t) => t.id));
-          const chatId = await env.VEYO_KV.get(`chat:${userId}`);
-          for (const old of prevTasks) {
-            if (old && old.id && !newIds.has(old.id)) await deleteWarnIfAny(env, userId, chatId, old.id);
-          }
-        }
-      } catch { /* не критично */ }
-    }
-
     await env.VEYO_KV.put(
       `user:${userId}`,
       JSON.stringify({
         tz: (typeof body.tz === 'string' && body.tz) || 'UTC',
-        leadMin,
         tasks,
         updatedAt: new Date().toISOString(),
       })
@@ -296,13 +280,21 @@ async function handleWebhook(request, env) {
 
     const update = await request.json();
 
-    // обычное сообщение: запоминаем chat_id
+    // обычное сообщение: запоминаем chat_id; на /start — приветствие
     const msg = update && (update.message || update.channel_post);
     if (msg) {
       const from = msg.from || msg.sender_chat;
       const chat = msg.chat;
       if (from && from.id && chat && chat.id) {
         await env.VEYO_KV.put(`chat:${from.id}`, String(chat.id));
+      }
+      const text = typeof msg.text === 'string' ? msg.text.trim() : '';
+      if (chat && chat.id && chat.type === 'private' && /^\/start(\s|$)/i.test(text)) {
+        try {
+          await sendWelcome(env, chat.id);
+        } catch (err) {
+          console.error(`sendWelcome fail chat=${chat.id}:`, String(err));
+        }
       }
       return json({ ok: true });
     }
@@ -409,50 +401,33 @@ async function deliverForUser(env, key, now) {
       const userData = JSON.parse(raw);
       if (!userData.tz || !Array.isArray(userData.tasks) || userData.tasks.length === 0) return;
 
-      const chatId = await env.VEYO_KV.get(`chat:${userId}`);
-      if (!chatId) return; // пользователь не открывал чат с ботом
-
       const tz = userData.tz;
       const today = dateInTz(tz, now);
       const nowHhmm = timeInTz(tz, now);
       const nowMin = parseHhmm(nowHhmm);
       if (nowMin === null) return;
-      const leadMin = Number.isInteger(userData.leadMin) ? userData.leadMin : DEFAULT_LEAD_MIN;
 
       for (const task of userData.tasks) {
         if (!task || !task.reminderTime || !task.active) continue;
         const taskMin = parseHhmm(task.reminderTime);
         if (taskMin === null) continue;
 
-        // задача уже выполнена сегодня (снимок sync сегодняшний или отметка из бота)
+        // v6: работаем только в минуту уведомления — остальные минуты без чтений chat/done
+        if (nowMin !== taskMin) continue;
+
+        // задача уже выполнена сегодня (снимок sync или отметка из бота)
         const done = isDoneToday(userData, userId, task, today) || (await doneInKv(env, userId, task.id, today));
+        if (done) continue;
 
-        if (done) {
-          // P2: выполнено (кнопкой или в приложении) -> убираем ранее отправленное предупреждение из чата
-          await deleteWarnIfAny(env, userId, chatId, task.id);
-        }
+        if (await alreadySent(env, userId, today, task.id, 'due')) continue;
 
-        // 1) предупреждение за leadMin минут до времени задачи
-        if (!done && leadMin > 0) {
-          const warnMin = (taskMin - leadMin + 1440) % 1440;
-          if (nowMin === warnMin && !(await alreadySent(env, userId, today, task.id, 'warn'))) {
-            const msgId = await sendTelegram(env, chatId, taskLine(task, true));
-            await markSent(env, userId, today, task.id, 'warn');
-            // запоминаем сообщение-предупреждение, чтобы удалить его, когда придёт уведомление
-            if (msgId) {
-              await env.VEYO_KV.put(`warnmsg:${userId}:${task.id}`, String(msgId), { expirationTtl: WARNMSG_TTL_SEC });
-            }
-          }
-        }
+        const chatId = await env.VEYO_KV.get(`chat:${userId}`);
+        if (!chatId) return; // пользователь не открывал чат с ботом
 
         // P1: кнопка «Выполнено» с датой (done:<YYYY-MM-DD>:<taskId>)
-        if (!done && nowMin === taskMin && !(await alreadySent(env, userId, today, task.id, 'due'))) {
-          const extra = { reply_markup: { inline_keyboard: [[{ text: '✅ Выполнено', callback_data: `done:${today}:${task.id}` }]] } };
-          await sendTelegram(env, chatId, taskLine(task, false), extra);
-          await markSent(env, userId, today, task.id, 'due');
-          // уведомление пришло — удаляем раннее предупреждение из чата
-          await deleteWarnIfAny(env, userId, chatId, task.id);
-        }
+        const extra = { reply_markup: { inline_keyboard: [[{ text: '✅ Выполнено', callback_data: `done:${today}:${task.id}` }]] } };
+        await sendTelegram(env, chatId, taskLine(task, false), extra);
+        await markSent(env, userId, today, task.id, 'due');
       }
     } catch (err) {
       console.error(`deliver fail user=${userId}:`, String(err));
@@ -617,7 +592,7 @@ export default {
       return json({ ok: tgResp.ok, telegram: tgText.slice(0, 600) });
     }
     if (url.pathname === '/') {
-      return json({ ok: true, service: 'veyo-reminders', version: 4 });
+      return json({ ok: true, service: 'veyo-reminders', version: 6 });
     }
     return json({ ok: false, error: 'not found' }, 404);
   },
