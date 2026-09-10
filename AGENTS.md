@@ -78,7 +78,7 @@ $tg = $root.Replace('<meta name="viewport" content="width=device-width, initial-
 - Оверлей `#timeInputOverlay`: барабан `#wheelHours`/`#wheelMinutes` (24×60, scroll-snap, шаг 44px, padding 66px для центровки), ручной ввод `#timeManual` (ЧЧ:ММ, бесплатно любой минуты — колесо тоже 1 мин), пресеты-чипы `#timePresets` (08:00 Утро, 12:00 День, 19:00 Вечер, 22:00 Ночь), кнопка «Не напоминать» (`#timeClear` сбрасывает), «Готово`/`Отмена`.
 - Логика на уровне IIFE: `openTimePicker()`, `closeTimePicker()`, `updateReminderDisplay()`, `ensureWheelBuilt()`, `syncWheelToDraft()`, `syncDraftFromWheel(col)`, `parseTimeStr()`, `pad2()`; draft-переменные `reminderTimeCurrent` (сабмит в модель) и `reminderTimeDraft`.
 - Данные: `habit.reminderTime` ('HH:MM'|null) в localStorage, на карточке бейдж `• 🔔 HH:MM`.
-- **Настройки** (03.09): модалка `#settingsOverlay`. Блок «За сколько минут напоминать» (`leadMin`) **удалён 10.09** вместе с предупреждением (warn) — теперь в модалке только плашка версии.
+- **Настройки** (03.09): модалка `#settingsOverlay`. Блок «За сколько минут напоминать» (`leadMin`) удалён 10.09 (вместе с warn). **10.09 модалка и иконка-шестерёнка `#settingsBtn` УДАЛЕНЫ полностью** — настроек в UI больше нет.
 - Бот-доставка: Cloudflare Worker `veyo-reminders` (POST /api/sync → KV `VEYO_KV`; авторизация по `initData`), эндпоинт `/api/state` (GET, отдаёт done-отметки + TZ; тоже по `initData`). Cron раз в минуту: **одно** уведомление в само время задачи (тип `due`) + кнопка «✅ Выполнено» (всегда). Предупреждение (warn) **удалено 10.09**. Защита от дублей через KV `sent:<userId>:<date>:<taskId>:due`. Отметка «Выполнено» из бота → KV `done:...` + editMessageText. ВАЖНО: `bot/` — зона бот-агента, фронт-кодер НЕ редактирует.
 
 ### Дизайн (ребрендинг 02.09 — палитра от иконки Veyo)
@@ -90,8 +90,8 @@ $tg = $root.Replace('<meta name="viewport" content="width=device-width, initial-
 
 ### Версия приложения
 - Текущая версия: **0.1.1**.
-- В модалке «Настройки» (`#settingsOverlay`) снизу — неяркая плашка `.app-version` «Veyo Tracker vX.Y.Z» (в конце `.modal`, вне `.settings-body`).
-- ПРАВИЛО: когда пользователь говорит «меняем версию на X.Y.Z» — менять номер ТОЛЬКО в этой плашке (root index.html), затем копировать в android assets и пересобирать telegram/index.html (процедура выше). Отдельного файла версии нет.
+- Версия показана неярким текстом `.app-version` «Veyo Tracker vX.Y.Z» в самом низу главной страницы, выровнена по правому краю (в потоке, НЕ fixed) — видна на обеих вкладках «Задачи» и «План» (элемент сразу после `</main>`). Иконки/модалки «Настройки» больше нет.
+- ПРАВИЛО: когда пользователь говорит «меняем версию на X.Y.Z» — менять номер ТОЛЬКО в этом элементе (root index.html), затем копировать в android assets и пересобирать telegram/index.html (процедура выше). Отдельного файла версии нет.
 
 ### Прочее
 - План-секция на главном экране: кнопка `📅` для создания плана показывается всегда, даже если все задачи «без периода» (раньше скрывалась при `habits.length > 0`). Логика: `renderPlan()` считает `hasContent` по непустым планам и непериодным задачам; если `!hasContent` — рисует empty-state.

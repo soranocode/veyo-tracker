@@ -2054,12 +2054,13 @@ body.move-mode .habit-card.leaving {
 }
 
 .app-version {
-    margin-top: 16px;
-    text-align: center;
-    font-size: 0.72rem;
+    text-align: right;
+    padding: 14px 16px calc(10px + env(safe-area-inset-bottom));
+    font-size: 0.68rem;
     letter-spacing: 0.02em;
     color: var(--text-secondary);
-    opacity: 0.5;
+    opacity: 0.45;
+    user-select: none;
 }
 
 .settings-section-title {
